@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.1.0.0",
+        "changelog": "Adds optional removal of duplicate external subtitles, and an always-visible status panel with per-stage counts.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-autosubsync/releases/download/v1.1.0.0/autosubsync-v1.1.0.0.zip",
+        "checksum": "367488434d669261d6cd286bb8865c7e",
+        "timestamp": "2026-08-12T18:59:30Z"
+      },
+      {
         "version": "1.0.0.0",
         "changelog": "Initial release.",
         "targetAbi": "10.11.0.0",
