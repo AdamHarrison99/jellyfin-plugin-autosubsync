@@ -40,7 +40,7 @@ in `C:\Program Files\Tesseract-OCR`, `/usr/bin`, `/usr/local/bin`, `/snap/bin`, 
 the environment Jellyfin runs under and it is passed through. See [Tesseract's installation
 instructions](https://tesseract-ocr.github.io/tessdoc/Installation.html) for your platform.
 
-**In Docker,** You need an init hook `apt-get install -y tesseract-ocr tesseract-ocr-eng`.
+**In Docker,** you'll need an init hook for tesseract. `apt-get install -y tesseract-ocr tesseract-ocr-eng`.
 
 Without Tesseract, image tracks are
 reported as unsupported and everything else keeps working normally.

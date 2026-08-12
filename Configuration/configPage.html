@@ -44,12 +44,42 @@
             }
 
             /* One width for every control, sized to the longest option text. */
-            #AutoSubSyncConfigPage .selectContainer select,
-            #AutoSubSyncConfigPage .inputContainer input {
+            #AutoSubSyncConfigPage .inputContainer input,
+            #AutoSubSyncConfigPage #libraryList {
                 display: block;
                 width: 100%;
                 max-width: 24em;
                 box-sizing: border-box;
+            }
+
+            /* ! emby-select anchors its arrow to the container, not the select. Cap the
+               container or the arrow strands itself at the far right of the page. */
+            #AutoSubSyncConfigPage .selectContainer {
+                max-width: 24em;
+            }
+
+            #AutoSubSyncConfigPage .selectContainer select {
+                display: block;
+                width: 100%;
+                box-sizing: border-box;
+            }
+
+            #AutoSubSyncConfigPage .raised {
+                display: inline-flex;
+                width: auto;
+                min-width: 14em;
+                margin: 0;
+            }
+
+            #AutoSubSyncConfigPage .dangerHeading {
+                color: #d9534f;
+            }
+
+            #AutoSubSyncConfigPage .dangerButton,
+            #AutoSubSyncConfigPage .dangerButton:hover,
+            #AutoSubSyncConfigPage .dangerButton:focus {
+                background: #d9534f;
+                color: #fff;
             }
         </style>
 
@@ -85,11 +115,11 @@
                     <br />
                     <h2>Scope</h2>
 
-                    <div class="selectContainer">
-                        <label class="selectLabel" for="selLibraries">Libraries</label>
-                        <select is="emby-select" id="selLibraries" multiple size="6"></select>
+                    <div class="inputContainer">
+                        <label class="inputLabel">Libraries</label>
+                        <div id="libraryList" class="checkboxList paperList" style="padding: .5em 1em;"></div>
                         <div class="fieldDescription">
-                            Select the libraries to process. Nothing selected means nothing runs.
+                            Tick the libraries to process. Nothing ticked means nothing runs.
                         </div>
                     </div>
 
@@ -179,19 +209,19 @@
                     <br />
                     <h2>Output</h2>
 
+                    <label class="selectLabel" for="selWriteMode">Where to write synced external subtitles</label>
                     <div class="selectContainer">
-                        <label class="selectLabel" for="selWriteMode">Where to write synced external subtitles</label>
                         <select is="emby-select" id="selWriteMode">
                             <option value="Overwrite">Overwrite the original</option>
                             <option value="SideBySide">Write a new file alongside the original</option>
                         </select>
-                        <div class="fieldDescription">
-                            Embedded tracks always become new sidecar files; this setting only
-                            affects subtitles that are already separate files. Overwriting always
-                            backs the original up first, into the plugin's own data folder and never
-                            beside your media. If the backup cannot be written, the original is left
-                            alone.
-                        </div>
+                    </div>
+                    <div class="fieldDescription belowControl">
+                        Embedded tracks always become new sidecar files; this setting only
+                        affects subtitles that are already separate files. Overwriting always
+                        backs the original up first, into the plugin's own data folder and never
+                        beside your media. If the backup cannot be written, the original is left
+                        alone.
                     </div>
 
                     <div class="inputContainer">
@@ -243,7 +273,7 @@
 
                     <br />
                     <div>
-                        <button is="emby-button" type="submit" class="raised button-submit block">
+                        <button is="emby-button" type="submit" class="raised button-submit">
                             <span>Save</span>
                         </button>
                     </div>
@@ -252,7 +282,7 @@
                 <br />
                 <h2>Actions</h2>
 
-                <button is="emby-button" type="button" id="btnRunNow" class="raised block">
+                <button is="emby-button" type="button" id="btnRunNow" class="raised">
                     <span>Run full sync now</span>
                 </button>
                 <div class="fieldDescription belowControl">
@@ -260,9 +290,9 @@
                 </div>
 
                 <br />
-                <h2>Danger zone</h2>
+                <h2 class="dangerHeading">Danger zone</h2>
 
-                <button is="emby-button" type="button" id="btnRollback" class="raised block">
+                <button is="emby-button" type="button" id="btnRollback" class="raised dangerButton">
                     <span>Roll back everything</span>
                 </button>
                 <div class="fieldDescription belowControl">
@@ -270,7 +300,7 @@
                     every subtitle file this plugin created. Your media files are never touched.
                 </div>
 
-                <button is="emby-button" type="button" id="btnClearDatabase" class="raised block">
+                <button is="emby-button" type="button" id="btnClearDatabase" class="raised dangerButton">
                     <span>Clear database</span>
                 </button>
                 <div class="fieldDescription belowControl">
@@ -303,16 +333,27 @@
                     return Math.min(Math.max(parsed, min), max);
                 }
 
-                function selectedValues(select) {
-                    return Array.prototype.slice.call(select.selectedOptions).map(function (o) { return o.value; });
+                function checkedLibraryIds(page) {
+                    var boxes = page.querySelectorAll('#libraryList .chkLibrary:checked');
+                    return Array.prototype.slice.call(boxes).map(function (b) { return b.getAttribute('data-id'); });
                 }
 
                 function loadLibraries(page, selectedIds) {
                     return ApiClient.getVirtualFolders().then(function (folders) {
-                        var select = page.querySelector('#selLibraries');
-                        select.innerHTML = folders.map(function (f) {
-                            var selected = selectedIds.indexOf(f.ItemId) !== -1 ? ' selected' : '';
-                            return '<option value="' + f.ItemId + '"' + selected + '>' + f.Name + '</option>';
+                        var list = page.querySelector('#libraryList');
+
+                        if (!folders.length) {
+                            list.innerHTML = '<div class="fieldDescription">No libraries exist on this server yet.</div>';
+                            return;
+                        }
+
+                        list.innerHTML = folders.map(function (f) {
+                            var checked = selectedIds.indexOf(f.ItemId) !== -1 ? ' checked' : '';
+                            return '<label class="checkboxContainer">'
+                                + '<input is="emby-checkbox" type="checkbox" class="chkLibrary" data-id="'
+                                + escapeHtml(f.ItemId) + '"' + checked + ' />'
+                                + '<span>' + escapeHtml(f.Name) + '</span>'
+                                + '</label>';
                         }).join('');
                     });
                 }
@@ -475,7 +516,7 @@
                     ApiClient.getPluginConfiguration(pluginUniqueId).then(function (config) {
                         config.DryRunMode = page.querySelector('#chkDryRun').checked;
 
-                        config.EnabledLibraryIds = selectedValues(page.querySelector('#selLibraries'));
+                        config.EnabledLibraryIds = checkedLibraryIds(page);
                         config.ProcessExternalSubtitles = page.querySelector('#chkExternal').checked;
                         config.ProcessEmbeddedSubtitles = page.querySelector('#chkEmbedded').checked;
                         config.SkipEmbeddedWhenExternalExists = page.querySelector('#chkSkipCovered').checked;
