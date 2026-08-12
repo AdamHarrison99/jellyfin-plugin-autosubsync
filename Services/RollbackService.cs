@@ -84,7 +84,7 @@ public class RollbackService
     // ! Provenance decides the verb. Restoring a Created file would resurrect nothing.
     private RollbackOutcome Undo(SyncRecord record, PluginConfiguration config)
     {
-        var outcome = record.Provenance == SubtitleProvenance.Retimed
+        var outcome = record.Provenance is SubtitleProvenance.Retimed or SubtitleProvenance.Superseded
             ? Restore(record)
             : Delete(record, config);
 

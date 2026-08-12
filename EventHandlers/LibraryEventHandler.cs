@@ -17,6 +17,7 @@ public class LibraryEventHandler : IHostedService, IDisposable
     private readonly ILibraryManager _libraryManager;
     private readonly SubtitleDiscoveryService _discovery;
     private readonly SyncOrchestrator _orchestrator;
+    private readonly SubtitleDeduplicator _deduplicator;
     private readonly LibraryScopeResolver _scopeResolver;
     private readonly AssyRuntime _runtime;
     private readonly ILogger<LibraryEventHandler> _logger;
@@ -29,6 +30,7 @@ public class LibraryEventHandler : IHostedService, IDisposable
         ILibraryManager libraryManager,
         SubtitleDiscoveryService discovery,
         SyncOrchestrator orchestrator,
+        SubtitleDeduplicator deduplicator,
         LibraryScopeResolver scopeResolver,
         AssyRuntime runtime,
         ILogger<LibraryEventHandler> logger)
@@ -36,6 +38,7 @@ public class LibraryEventHandler : IHostedService, IDisposable
         _libraryManager = libraryManager;
         _discovery = discovery;
         _orchestrator = orchestrator;
+        _deduplicator = deduplicator;
         _scopeResolver = scopeResolver;
         _runtime = runtime;
         _logger = logger;
@@ -97,12 +100,16 @@ public class LibraryEventHandler : IHostedService, IDisposable
                 return;
             }
 
-            foreach (var target in _discovery.Discover(item, config))
+            var targets = _discovery.Discover(item, config);
+
+            foreach (var target in targets)
             {
                 await _orchestrator
                     .ProcessAsync(target, config, _shutdownCts.Token)
                     .ConfigureAwait(false);
             }
+
+            _deduplicator.ProcessItem(item.Id, targets, config);
         }
         catch (OperationCanceledException)
         {

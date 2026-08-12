@@ -44,16 +44,18 @@
             }
 
             /* One width for every control, sized to the longest option text. */
+            /* ! paperList carries its own auto margins, which centre the box. */
             #AutoSubSyncConfigPage .inputContainer input,
             #AutoSubSyncConfigPage #libraryList {
                 display: block;
                 width: 100%;
                 max-width: 24em;
                 box-sizing: border-box;
+                margin: 0;
             }
 
-            /* ! emby-select anchors its arrow to the container, not the select. Cap the
-               container or the arrow strands itself at the far right of the page. */
+            /* ! emby-select positions its arrow against the container and offsets it by the
+               label. Cap the container, and keep the label inside it. */
             #AutoSubSyncConfigPage .selectContainer {
                 max-width: 24em;
             }
@@ -66,6 +68,9 @@
 
             #AutoSubSyncConfigPage .raised {
                 display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                text-align: center;
                 width: auto;
                 min-width: 14em;
                 margin: 0;
@@ -174,6 +179,20 @@
                         are dropped entirely.
                     </div>
 
+                    <label class="checkboxContainer">
+                        <input is="emby-checkbox" type="checkbox" id="chkDeduplicate" />
+                        <span>Remove duplicate external subtitles</span>
+                    </label>
+                    <div class="fieldDescription">
+                        After everything for an item has synced, subtitle files of the same language
+                        and flags that turn out to hold at least 85% the same text and the same
+                        styling are collapsed to one. Only external files are removed; a track inside
+                        the video is never touched. Every removed file is copied to the backup vault
+                        first and is restored by "Roll back everything". Comparison happens only once
+                        every copy has synced, so an unsynced duplicate is never mistaken for a
+                        redundant one.
+                    </div>
+
                     <div class="inputContainer">
                         <label class="inputLabel" for="txtLanguages">Languages</label>
                         <input is="emby-input" type="text" id="txtLanguages" />
@@ -209,8 +228,8 @@
                     <br />
                     <h2>Output</h2>
 
-                    <label class="selectLabel" for="selWriteMode">Where to write synced external subtitles</label>
                     <div class="selectContainer">
+                        <label class="selectLabel" for="selWriteMode">Where to write synced external subtitles</label>
                         <select is="emby-select" id="selWriteMode">
                             <option value="Overwrite">Overwrite the original</option>
                             <option value="SideBySide">Write a new file alongside the original</option>
@@ -488,6 +507,7 @@
                         updateSkipCoveredState(page, config.ProcessEmbeddedSubtitles);
                         page.querySelector('#chkConvertImage').checked = config.ConvertImageSubtitles;
                         page.querySelector('#chkRemoveHi').checked = config.RemoveHearingImpairedTags;
+                        page.querySelector('#chkDeduplicate').checked = config.DeduplicateSubtitles;
                         page.querySelector('#txtLanguages').value = (config.LanguageAllowList || []).join(', ');
 
                         page.querySelector('#txtToolChain').value = (config.SyncToolChain || []).join(', ');
@@ -522,6 +542,7 @@
                         config.SkipEmbeddedWhenExternalExists = page.querySelector('#chkSkipCovered').checked;
                         config.ConvertImageSubtitles = page.querySelector('#chkConvertImage').checked;
                         config.RemoveHearingImpairedTags = page.querySelector('#chkRemoveHi').checked;
+                        config.DeduplicateSubtitles = page.querySelector('#chkDeduplicate').checked;
                         config.LanguageAllowList = splitList(page.querySelector('#txtLanguages').value);
 
                         config.SyncToolChain = splitList(page.querySelector('#txtToolChain').value);

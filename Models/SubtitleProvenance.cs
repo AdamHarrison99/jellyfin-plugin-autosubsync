@@ -10,5 +10,8 @@ public enum SubtitleProvenance
     Retimed = 0,
 
     // A file the plugin created. Rollback deletes it; there is no original.
-    Created = 1
+    Created = 1,
+
+    // A duplicate the plugin removed after backing it up. Rollback restores BackupPath.
+    Superseded = 2
 }

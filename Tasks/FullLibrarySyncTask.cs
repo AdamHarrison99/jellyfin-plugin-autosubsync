@@ -13,6 +13,7 @@ public class FullLibrarySyncTask : IScheduledTask
     private readonly LibraryScopeResolver _scopeResolver;
     private readonly SubtitleDiscoveryService _discovery;
     private readonly SyncOrchestrator _orchestrator;
+    private readonly SubtitleDeduplicator _deduplicator;
     private readonly ISyncStore _store;
     private readonly BackupVault _vault;
     private readonly AssyRuntime _runtime;
@@ -23,6 +24,7 @@ public class FullLibrarySyncTask : IScheduledTask
         LibraryScopeResolver scopeResolver,
         SubtitleDiscoveryService discovery,
         SyncOrchestrator orchestrator,
+        SubtitleDeduplicator deduplicator,
         ISyncStore store,
         BackupVault vault,
         AssyRuntime runtime,
@@ -32,6 +34,7 @@ public class FullLibrarySyncTask : IScheduledTask
         _scopeResolver = scopeResolver;
         _discovery = discovery;
         _orchestrator = orchestrator;
+        _deduplicator = deduplicator;
         _store = store;
         _vault = vault;
         _runtime = runtime;
@@ -83,6 +86,8 @@ public class FullLibrarySyncTask : IScheduledTask
             {
                 await _orchestrator.ProcessAsync(target, config, cancellationToken).ConfigureAwait(false);
             }
+
+            _deduplicator.ProcessItem(items[i].Id, targets, config);
 
             progress.Report((double)(i + 1) / items.Count * 100);
         }

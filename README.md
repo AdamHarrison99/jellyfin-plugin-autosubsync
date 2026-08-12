@@ -9,6 +9,7 @@ Realigns subtitles against the audio of the media they belong to.
 
 - **Syncs external subtitle files** — in place with a backup, or alongside the original.
 - **Syncs embedded subtitle tracks** — extracted and written back as a subtitle file.
+- **Removes duplicate external subtitles** — if multiple subtitle files have the same content and formatting, they are backed up and removed.
 - **Converts image-based subtitles to text** — PGS, VobSub, and DVB bitmaps, via OCR.
 - **Removes hearing-impaired tags** — `[door creaks]`, `(SIGHS)`, and speaker labels.
 
@@ -80,6 +81,7 @@ what it would have done.
 | Skip embedded tracks when an external of the same language exists | Off | Keeps the list short when a sidecar is already there and synced. |
 | Convert image-based subtitles to text | Off | PGS, VobSub, and DVB tracks are pictures of text, which no alignment engine can read. OCR converts them to a text subtitle, which is then synced — and stripped, if that is on — exactly like any other. Slow, and never perfect. The original bitmap track is never modified or replaced. Needs Tesseract on the server; see Requirements. |
 | Remove hearing-impaired tags | Off | Strips `[door creaks]`, `(SIGHS)`, and speaker labels from the subtitles the plugin writes, and drops cues that were nothing but a tag. Applied only to tracks that actually look hearing-impaired, so ordinary dialogue is left alone. A track that is stripped loses `sdh` from its filename. |
+| Remove duplicate external subtitles | Off | Once everything for an item has synced, subtitle **files** of the same language and flags that hold at least 85% the same text **and** the same styling are collapsed to one. Only external files are ever removed; a track inside the video is never touched. Every removed file is copied to the backup vault first and comes back with **Roll back everything**. Different formats are never merged — a `.srt` and an `.ass` are left alone, as are two `.ass` files whose styles differ. |
 | Languages | *all* | Comma-separated language codes, e.g. `eng, spa` or `en, es`. Two- and three-letter forms both work and can be mixed, as can the `ger`/`deu` style variants containers disagree about. Empty processes every language. Unlabelled and unrecognized tracks are always processed. |
 
 ### Engines

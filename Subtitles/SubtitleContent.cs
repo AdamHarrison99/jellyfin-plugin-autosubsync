@@ -45,6 +45,27 @@ public static class SubtitleContent
         return format == SubtitleFormat.Unknown;
     }
 
+    public static bool SameFormat(string leftPath, string rightPath)
+    {
+        var format = FormatOf(leftPath);
+        return format != SubtitleFormat.Unknown
+            && format == FormatOf(rightPath)
+            && string.Equals(
+                Path.GetExtension(leftPath),
+                Path.GetExtension(rightPath),
+                StringComparison.OrdinalIgnoreCase);
+    }
+
+    // One element per styling decision: style definitions, per-cue style, and inline markup.
+    public static IEnumerable<string> ReadFormatting(string path)
+        => FormatOf(path) switch
+        {
+            SubtitleFormat.Advanced => ReadAdvancedFormatting(path),
+            SubtitleFormat.Block => ReadBlockFormatting(path),
+            SubtitleFormat.MicroDvd => ReadMicroDvdFormatting(path),
+            _ => Enumerable.Empty<string>()
+        };
+
     // One element per cue.
     public static IEnumerable<string> ReadCues(string path)
         => FormatOf(path) switch
@@ -214,6 +235,135 @@ public static class SubtitleContent
             else if (depth == 0)
             {
                 builder.Append(c);
+            }
+        }
+
+        return builder.ToString();
+    }
+
+    // Style definitions plus, per cue, the style it names and the overrides it applies.
+    private static IEnumerable<string> ReadAdvancedFormatting(string path)
+    {
+        var inStyles = false;
+
+        foreach (var raw in ReadLinesSafe(path))
+        {
+            var line = raw.Trim();
+
+            if (line.StartsWith('['))
+            {
+                inStyles = line.Contains("Styles", StringComparison.OrdinalIgnoreCase);
+                continue;
+            }
+
+            if (inStyles && line.StartsWith("Style:", StringComparison.OrdinalIgnoreCase))
+            {
+                yield return "style=" + Condense(line["Style:".Length..]);
+                continue;
+            }
+
+            if (!line.StartsWith("Dialogue:", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var fields = line["Dialogue:".Length..].Split(',', 10);
+            if (fields.Length < 10)
+            {
+                continue;
+            }
+
+            yield return "cue=" + Condense(fields[3]);
+            yield return "margin=" + Condense(fields[5]) + ',' + Condense(fields[6]) + ',' + Condense(fields[7]);
+            yield return "effect=" + Condense(fields[8]);
+
+            foreach (var block in Blocks(fields[9], '{', '}'))
+            {
+                yield return "override=" + block;
+            }
+        }
+    }
+
+    // Inline markup, and the cue settings VTT puts after its timestamps.
+    private static IEnumerable<string> ReadBlockFormatting(string path)
+    {
+        foreach (var raw in ReadLinesSafe(path))
+        {
+            var line = raw.Trim();
+
+            if (line.Contains("-->", StringComparison.Ordinal))
+            {
+                var settings = Condense(line[(line.IndexOf("-->", StringComparison.Ordinal) + 3)..]);
+                var space = settings.IndexOf(' ', StringComparison.Ordinal);
+                if (space >= 0)
+                {
+                    yield return "settings=" + settings[(space + 1)..];
+                }
+
+                continue;
+            }
+
+            foreach (var tag in Blocks(line, '<', '>'))
+            {
+                yield return "tag=" + tag;
+            }
+
+            foreach (var block in Blocks(line, '{', '}'))
+            {
+                yield return "override=" + block;
+            }
+        }
+    }
+
+    private static IEnumerable<string> ReadMicroDvdFormatting(string path)
+    {
+        foreach (var line in ReadLinesSafe(path))
+        {
+            if (SplitMicroDvd(line) is not string text)
+            {
+                continue;
+            }
+
+            foreach (var block in Blocks(text, '{', '}'))
+            {
+                yield return "override=" + block;
+            }
+        }
+    }
+
+    // ! Nested braces are one block. ASS writes {\pos(1,2)} but also {\k1}{\k2} on one line.
+    private static IEnumerable<string> Blocks(string value, char open, char close)
+    {
+        var depth = 0;
+        var start = 0;
+
+        for (var i = 0; i < value.Length; i++)
+        {
+            if (value[i] == open)
+            {
+                if (depth == 0)
+                {
+                    start = i + 1;
+                }
+
+                depth++;
+            }
+            else if (value[i] == close && depth > 0 && --depth == 0)
+            {
+                yield return Condense(value[start..i]);
+            }
+        }
+    }
+
+    private static string Condense(string value)
+    {
+        var builder = new System.Text.StringBuilder(value.Length);
+
+        foreach (var c in value)
+        {
+            if (!char.IsWhiteSpace(c))
+            {
+                builder.Append(char.ToLowerInvariant(c));
             }
         }
 

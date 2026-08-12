@@ -52,6 +52,9 @@ public class PluginConfiguration : BasePluginConfiguration
 
     public bool RemoveHearingImpairedTags { get; set; }
 
+    // Collapses same-language duplicates once every one of them has synced.
+    public bool DeduplicateSubtitles { get; set; }
+
     // ---- Output ----
 
     // Applies to external subtitles only; embedded tracks always become new sidecars.
