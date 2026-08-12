@@ -177,6 +177,8 @@ public class SeConvRunner : ISeConvRunner
     [
         "HOME", "TMPDIR", "TMP", "TEMP",
         "LANG", "LC_ALL", "LC_CTYPE",
+        // ! Tesseract finds its language data here. Dropping it strands a relocated tessdata.
+        "TESSDATA_PREFIX",
         "SystemRoot", "windir", "COMSPEC", "PATHEXT", "NUMBER_OF_PROCESSORS", "USERPROFILE"
     ];
 

@@ -7,6 +7,8 @@ public record OcrRuntimeStatus(bool IsReady, string? SeConvPath, string? Tessera
 // Resolves the OCR toolchain: the pinned converter, and the Tesseract the admin installed.
 public class SeConvRuntime : PayloadRuntime
 {
+    private const string InstallDocsUrl = "https://tesseract-ocr.github.io/tessdoc/Installation.html";
+
     // ! No configuration setting resolves these. A settable path is arbitrary code execution.
     private static readonly string[] TesseractProbePaths =
     [
@@ -14,6 +16,7 @@ public class SeConvRuntime : PayloadRuntime
         @"C:\Program Files (x86)\Tesseract-OCR",
         "/usr/bin",
         "/usr/local/bin",
+        "/snap/bin",
         "/opt/homebrew/bin"
     ];
 
@@ -47,7 +50,7 @@ public class SeConvRuntime : PayloadRuntime
                 false,
                 seconv,
                 null,
-                "Tesseract is not installed on this server, and OCR cannot run without it.");
+                $"Tesseract is not installed on this server, and OCR cannot run without it. Install it, then restart Jellyfin: {InstallDocsUrl}");
         }
 
         return new OcrRuntimeStatus(true, seconv, tesseract, "OCR is ready.");
@@ -103,6 +106,9 @@ public class SeConvRuntime : PayloadRuntime
         }
     }
 
+    private static IEnumerable<string> PlatformProbePaths
+        => TesseractProbePaths.Where(p => p.StartsWith('/') != OperatingSystem.IsWindows());
+
     private void ReportMissingTesseract()
     {
         lock (_reportGate)
@@ -113,8 +119,15 @@ public class SeConvRuntime : PayloadRuntime
             }
 
             _reportedTesseract = true;
-            _logger.LogWarning(
-                "Tesseract was not found on PATH or in the usual install locations; OCR cannot run");
+            _logger.LogError(
+                "\"Convert image-based subtitles to text\" is turned on, but Tesseract is not installed on this "
+                + "server, and OCR cannot run without it. Install Tesseract and the language data for the "
+                + "subtitles you want read, then restart Jellyfin. Installation instructions: {InstallDocs}. "
+                + "Looked for '{Executable}' on PATH and in: {Locations}. "
+                + "Until then image subtitles are reported as unsupported and everything else keeps working.",
+                InstallDocsUrl,
+                TesseractExecutableName,
+                string.Join(", ", PlatformProbePaths));
         }
     }
 }

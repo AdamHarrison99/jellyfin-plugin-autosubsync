@@ -17,34 +17,46 @@ first pass happens once.
 
 ## What it does not do
 
-- **Download new subtitles for your media** — if you want missing subtitles fetched, use a plugin built for that, such as the [Jellyfin OpenSubtitles Plugin](https://github.com/jellyfin/jellyfin-plugin-opensubtitles).
+- **Downloads new subtitles for your media** — if you want missing subtitles fetched, use a plugin built for that, such as the [Jellyfin OpenSubtitles Plugin](https://github.com/jellyfin/jellyfin-plugin-opensubtitles).
 
-- **Integrate with the \*arr stack** — this plugin is an intentional, self contained alternative to Bazarr, along with the other \*arr internet PVR applications.
+- **Integrates with the \*arr stack** — this plugin is an intentional, self contained alternative to Bazarr, along with the other \*arr internet PVR applications.
 
 ## Requirements
 
-Jellyfin 10.11.0 or later, on 64-bit Windows, Linux, or macOS. Nothing else to install — on
+Jellyfin 10.11.0 or later, on 64-bit Windows, Linux, or macOS. On
 startup, after installing or updating, the plugin downloads the sync engine for your platform, a
 few hundred megabytes, once. It is fetched from this plugin's own releases and checked against a
 checksum built into the plugin, and the server log records it.
 
 **If you turn on "Convert image-based subtitles to text" or "Remove hearing-impaired text":** the
 plugin downloads a second tool, the [Subtitle Edit](https://github.com/SubtitleEdit/subtitleedit)
-converter, about 40 MB, the same way — from Subtitle Edit's own releases, against a checksum built
-into the plugin. Leave both settings off and it is never downloaded.
+converter, about 40 MB — from Subtitle Edit's own releases, against a checksum built into the plugin. Leave both settings off and it is never downloaded.
 
 **Only if you turn on "Convert image-based subtitles to text":** OCR additionally needs
 [Tesseract](https://github.com/tesseract-ocr/tesseract) installed on the server, along with the
-language data for the subtitles you want read. The plugin cannot ship it — there is no official
-Windows build and its language data installs system-wide — so it looks for it on your `PATH` and
-in the usual install locations. Without it, image tracks are reported as unsupported and
-everything else keeps working normally.
+language data for the subtitles you want read. The plugin looks for it on your `PATH`, then
+in `C:\Program Files\Tesseract-OCR`, `/usr/bin`, `/usr/local/bin`, `/snap/bin`, and
+`/opt/homebrew/bin`. If your language data lives somewhere non-standard, set `TESSDATA_PREFIX` in
+the environment Jellyfin runs under and it is passed through. See [Tesseract's installation
+instructions](https://tesseract-ocr.github.io/tessdoc/Installation.html) for your platform.
+
+**In Docker,** You need an init hook `apt-get install -y tesseract-ocr tesseract-ocr-eng`.
+
+Without Tesseract, image tracks are
+reported as unsupported and everything else keeps working normally.
 
 ## Installation
 
-1. Add the plugin repository to **Dashboard → Plugins → Repositories**.
+1. In **Dashboard → Plugins → Repositories**, add a repository with this URL:
+
+   ```text
+   https://raw.githubusercontent.com/AdamHarrison99/jellyfin-plugin-autosubsync/master/manifest.json
+   ```
+
 2. Install **AutoSubSync** from the catalogue and restart Jellyfin.
 3. Open the plugin settings and **select the libraries to process**.
+
+Source and releases: [github.com/AdamHarrison99/jellyfin-plugin-autosubsync](https://github.com/AdamHarrison99/jellyfin-plugin-autosubsync).
 
 ## Configuration
 
@@ -114,8 +126,17 @@ find them. However, they will remain on disk and can be manually restored as a l
 Subtitle alignment is done entirely by [AutoSubSync](https://github.com/denizsafak/AutoSubSync) by
 Deniz Şafak, which wraps [ffsubsync](https://github.com/smacke/ffsubsync),
 [alass](https://github.com/kaegi/alass), and
-[autosubsync](https://github.com/oseiskar/autosubsync). This plugin decides what to sync, when,
-and where the result goes.
+[autosubsync](https://github.com/oseiskar/autosubsync).
+
+Reading image-based subtitles and removing hearing-impaired text are done by
+[Subtitle Edit](https://github.com/SubtitleEdit/subtitleedit) by Nikolaj Olsson, via its headless
+`seconv` converter. Decades of OCR post-correction live in that project, and this plugin would not
+attempt image subtitles without it.
+
+The OCR itself is [Tesseract](https://github.com/tesseract-ocr/tesseract), maintained by the
+Tesseract OCR community and originally developed at HP and Google.
+
+This plugin decides what to sync, when, and where the result goes.
 
 ---
 
