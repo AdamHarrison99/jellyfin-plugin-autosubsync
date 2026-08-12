@@ -27,9 +27,15 @@ public class SeConvRunner : ISeConvRunner
         _logger = logger;
     }
 
-    public async Task<string?> EnsureReadyAsync(CancellationToken cancellationToken)
+    public async Task<string?> EnsureOcrReadyAsync(CancellationToken cancellationToken)
     {
         var status = await _runtime.EnsureOcrReadyAsync(cancellationToken).ConfigureAwait(false);
+        return status.IsReady ? null : status.Message;
+    }
+
+    public async Task<string?> EnsureConverterReadyAsync(CancellationToken cancellationToken)
+    {
+        var status = await _runtime.EnsureConverterReadyAsync(cancellationToken).ConfigureAwait(false);
         return status.IsReady ? null : status.Message;
     }
 
@@ -55,7 +61,7 @@ public class SeConvRunner : ISeConvRunner
             arguments.Insert(3, "--ocr-language:" + code);
         }
 
-        return RunAsync(arguments, outputPath, cancellationToken);
+        return RunAsync(arguments, outputPath, _runtime.GetOcrStatus(), cancellationToken);
     }
 
     public Task<SeConvResult> RemoveHearingImpairedAsync(
@@ -72,15 +78,16 @@ public class SeConvRunner : ISeConvRunner
             outputPath
         };
 
-        return RunAsync(arguments, outputPath, cancellationToken);
+        // ! Text in, text out. Requiring Tesseract here would strand the strip on an OCR-less server.
+        return RunAsync(arguments, outputPath, _runtime.GetConverterStatus(), cancellationToken);
     }
 
     private async Task<SeConvResult> RunAsync(
         List<string> arguments,
         string outputPath,
+        SeConvStatus status,
         CancellationToken cancellationToken)
     {
-        var status = _runtime.GetOcrStatus();
         if (!status.IsReady || status.SeConvPath is not { } exe)
         {
             return new SeConvResult(null, status.Message, 0);

@@ -27,18 +27,17 @@ public class PluginConfiguration : BasePluginConfiguration
 
     public static readonly string[] KnownTools = ["ffsubsync", "alass", "autosubsync"];
 
-    public List<string> SyncToolChain { get; set; } = new() { "ffsubsync", "alass" };
-
-    // Total engine runs per target before it stops being retried.
-    public int MaxAttempts { get; set; } = 2;
+    // ! Arrays, not List. Jellyfin stores config as XML, and XmlSerializer appends to a
+    //   collection property it finds already populated.
+    public string[] SyncToolChain { get; set; } = ["ffsubsync", "alass", "autosubsync"];
 
     // ---- Scope ----
 
     // ! Empty means no library is processed. Opt in, never opt out.
-    public List<Guid> EnabledLibraryIds { get; set; } = new();
+    public Guid[] EnabledLibraryIds { get; set; } = [];
 
     // ISO 639-2 codes. Empty means all.
-    public List<string> LanguageAllowList { get; set; } = new();
+    public string[] LanguageAllowList { get; set; } = [];
 
     public bool ProcessExternalSubtitles { get; set; } = true;
 
@@ -102,7 +101,6 @@ public class PluginConfiguration : BasePluginConfiguration
     // Called on every save; the API accepts arbitrary JSON.
     public void Normalize()
     {
-        MaxAttempts = Math.Clamp(MaxAttempts, 1, 5);
         MaxConcurrentSyncs = Math.Clamp(MaxConcurrentSyncs, AutoConcurrency, 8);
         PerSyncTimeoutMinutes = Math.Clamp(PerSyncTimeoutMinutes, 1, 240);
         MinimumOffsetMs = Math.Clamp(MinimumOffsetMs, 0, 600_000);
@@ -110,15 +108,20 @@ public class PluginConfiguration : BasePluginConfiguration
         // ! Must never be empty.
         MarkerSuffix = SanitizeMarker(MarkerSuffix);
 
+        // ! The API accepts a null for any of these; every use below assumes it is not.
+        SyncToolChain ??= [];
+        LanguageAllowList ??= [];
+        EnabledLibraryIds ??= [];
+
         SyncToolChain = SyncToolChain
             .Where(t => KnownTools.Contains(t, StringComparer.OrdinalIgnoreCase))
             .Select(t => t.ToLowerInvariant())
             .Distinct(StringComparer.Ordinal)
-            .ToList();
+            .ToArray();
 
-        if (SyncToolChain.Count == 0)
+        if (SyncToolChain.Length == 0)
         {
-            SyncToolChain = new List<string> { "ffsubsync", "alass" };
+            SyncToolChain = ["ffsubsync", "alass", "autosubsync"];
         }
 
         if (string.IsNullOrWhiteSpace(OutputEncoding))
@@ -129,7 +132,9 @@ public class PluginConfiguration : BasePluginConfiguration
         LanguageAllowList = LanguageAllowList
             .Where(l => !string.IsNullOrWhiteSpace(l))
             .Select(l => l.Trim())
-            .ToList();
+            .ToArray();
+
+        EnabledLibraryIds = EnabledLibraryIds.Distinct().ToArray();
     }
 
     private static string SanitizeMarker(string value)

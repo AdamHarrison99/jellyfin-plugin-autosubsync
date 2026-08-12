@@ -125,6 +125,12 @@
                 color: #d9534f;
             }
 
+            #AutoSubSyncConfigPage .depName {
+                display: inline-block;
+                min-width: 11em;
+                font-weight: 600;
+            }
+
             #AutoSubSyncConfigPage .statGrid {
                 display: grid;
                 grid-template-columns: repeat(auto-fit, minmax(7em, 1fr));
@@ -215,7 +221,7 @@
 
                 <div id="statusPanel" class="statusPanel" style="display:none;">
                     <div class="statusTitle">Status</div>
-                    <div id="statusEngine" class="statusEngine"></div>
+                    <div id="statusDependencies"></div>
                     <div id="statusCounts" class="statGrid"></div>
 
                     <div class="statusHeading">Pipeline</div>
@@ -226,7 +232,7 @@
                                 <th class="num">Done</th>
                                 <th class="num">Skipped</th>
                                 <th class="num">Failed</th>
-                                <th class="num">Time</th>
+                                <th class="num">Avg</th>
                             </tr>
                         </thead>
                         <tbody id="statusStages"></tbody>
@@ -319,8 +325,7 @@
                         styling are collapsed to one. Only external files are removed; a track inside
                         the video is never touched. Every removed file is copied to the backup vault
                         first and is restored by "Roll back everything". Comparison happens only once
-                        every copy has synced, so an unsynced duplicate is never mistaken for a
-                        redundant one.
+                        every copy has synced, so an unsynced duplicate is never missed.
                     </div>
 
                     <div class="inputContainer">
@@ -342,16 +347,10 @@
                         <div class="fieldDescription">
                             Comma-separated, tried in order: <code>ffsubsync</code>, <code>alass</code>,
                             <code>autosubsync</code>. Every subtitle is aligned against the video's own
-                            audio.
-                        </div>
-                    </div>
-
-                    <div class="inputContainer">
-                        <label class="inputLabel" for="txtMaxAttempts">Maximum attempts</label>
-                        <input is="emby-input" type="number" id="txtMaxAttempts" min="1" max="5" />
-                        <div class="fieldDescription">
-                            How many engine runs a subtitle gets before it is left alone. A failed
-                            subtitle is tried again only after it or its video changes.
+                            audio. Each engine that reads the format is tried once, and one that cannot
+                            read it is skipped rather than failed &mdash; <code>autosubsync</code> reads
+                            only SRT. A subtitle none of them can align is left alone until it or its
+                            video changes.
                         </div>
                     </div>
 
@@ -518,7 +517,10 @@
                 }
 
                 function formatDuration(ms) {
-                    var seconds = Math.round((ms || 0) / 1000);
+                    if (ms < 1000) {
+                        return Math.round(ms) + 'ms';
+                    }
+                    var seconds = Math.round(ms / 1000);
                     if (seconds < 60) {
                         return seconds + 's';
                     }
@@ -530,7 +532,6 @@
                 }
 
                 var stageLabels = {
-                    Acquire: 'Extraction',
                     Convert: 'OCR (image to text)',
                     Sync: 'Synchronization',
                     Transform: 'Hearing-impaired text',
@@ -542,6 +543,18 @@
                         + '<span class="statValue">' + escapeHtml(value || 0) + '</span>'
                         + '<span class="statLabel">' + escapeHtml(label) + '</span>'
                         + '</div>';
+                }
+
+                function dependencyRow(dependency) {
+                    return '<div class="statusEngine' + (dependency.Ready ? '' : ' isWarning') + '">'
+                        + '<span class="depName">' + escapeHtml(dependency.Name) + '</span>'
+                        + escapeHtml(dependency.Message)
+                        + '</div>';
+                }
+
+                function renderDependencies(page, dependencies) {
+                    page.querySelector('#statusDependencies').innerHTML =
+                        (dependencies || []).map(dependencyRow).join('');
                 }
 
                 function renderCounts(page, status) {
@@ -563,7 +576,7 @@
                         + '<td class="num">' + escapeHtml(stage.Succeeded) + '</td>'
                         + '<td class="num">' + escapeHtml(stage.Skipped) + '</td>'
                         + '<td class="num' + (stage.Failed ? ' isFailed' : '') + '">' + escapeHtml(stage.Failed) + '</td>'
-                        + '<td class="num">' + escapeHtml(stage.ElapsedMs ? formatDuration(stage.ElapsedMs) : '—') + '</td>'
+                        + '<td class="num">' + escapeHtml(stage.AverageMs ? formatDuration(stage.AverageMs) : '—') + '</td>'
                         + '</tr>';
                 }
 
@@ -589,11 +602,7 @@
                             return;
                         }
 
-                        var engineElement = page.querySelector('#statusEngine');
-                        engineElement.textContent = status.EngineMessage
-                            || (status.EngineReady ? 'Sync engine ready.' : 'Sync engine unavailable.');
-                        engineElement.classList.toggle('isWarning', !status.EngineReady);
-
+                        renderDependencies(page, status.Dependencies);
                         renderCounts(page, status);
                         renderStages(page, status.Stages);
 
@@ -608,9 +617,29 @@
                             : '';
 
                         page.querySelector('#statusPanel').style.display = '';
+                        scheduleStatus(page, status.InFlight ? busyInterval : idleInterval);
                     }, function () {
                         page.querySelector('#statusPanel').style.display = 'none';
+                        scheduleStatus(page, idleInterval);
                     });
+                }
+
+                var busyInterval = 2000;
+                var idleInterval = 20000;
+                var statusTimer = null;
+
+                // ! One timer, re-armed by loadStatus. Two would double the request rate.
+                function scheduleStatus(page, delay) {
+                    stopStatusUpdates();
+                    if (document.hidden) { return; }
+                    statusTimer = setTimeout(function () { loadStatus(page); }, delay);
+                }
+
+                function stopStatusUpdates() {
+                    if (statusTimer) {
+                        clearTimeout(statusTimer);
+                        statusTimer = null;
+                    }
                 }
 
                 function load(page) {
@@ -631,7 +660,6 @@
                         page.querySelector('#txtLanguages').value = (config.LanguageAllowList || []).join(', ');
 
                         page.querySelector('#txtToolChain').value = (config.SyncToolChain || []).join(', ');
-                        page.querySelector('#txtMaxAttempts').value = config.MaxAttempts;
 
                         page.querySelector('#selWriteMode').value = config.ExternalWriteMode;
                         page.querySelector('#txtMinimumOffset').value = config.MinimumOffsetMs;
@@ -666,7 +694,6 @@
                         config.LanguageAllowList = splitList(page.querySelector('#txtLanguages').value);
 
                         config.SyncToolChain = splitList(page.querySelector('#txtToolChain').value);
-                        config.MaxAttempts = readInt(page, '#txtMaxAttempts', 2, 1, 5);
 
                         config.MinimumOffsetMs = readInt(page, '#txtMinimumOffset', 50, 0, 600000);
                         config.MaxConcurrentSyncs = readInt(page, '#txtConcurrency', 0, 0, 8);
@@ -686,6 +713,18 @@
 
                 document.querySelector('#AutoSubSyncConfigPage').addEventListener('pageshow', function () {
                     load(this);
+                });
+
+                // ! Leaving the page must stop the timer; the handler outlives the view.
+                document.querySelector('#AutoSubSyncConfigPage').addEventListener('pagehide', stopStatusUpdates);
+
+                document.addEventListener('visibilitychange', function () {
+                    var page = document.querySelector('#AutoSubSyncConfigPage');
+                    if (document.hidden) {
+                        stopStatusUpdates();
+                    } else if (page && page.offsetParent !== null) {
+                        loadStatus(page);
+                    }
                 });
 
                 document.querySelector('#chkDryRun').addEventListener('change', function () {

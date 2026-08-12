@@ -7,8 +7,10 @@ public record SeConvResult(string? OutputPath, string? Message, long ElapsedMs)
 
 public interface ISeConvRunner
 {
-    // Null once the toolchain is usable, else what is missing.
-    Task<string?> EnsureReadyAsync(CancellationToken cancellationToken);
+    // Both return null once usable, else what is missing.
+    Task<string?> EnsureOcrReadyAsync(CancellationToken cancellationToken);
+
+    Task<string?> EnsureConverterReadyAsync(CancellationToken cancellationToken);
 
     Task<SeConvResult> OcrAsync(
         string inputPath,

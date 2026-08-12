@@ -21,7 +21,7 @@ public class LibraryScopeResolver
 
     public IReadOnlyList<BaseItem> GetItemsInScope(PluginConfiguration config)
     {
-        if (config.EnabledLibraryIds.Count == 0)
+        if (config.EnabledLibraryIds.Length == 0)
         {
             _logger.LogInformation("No libraries are enabled; nothing to do");
             return [];
@@ -51,7 +51,7 @@ public class LibraryScopeResolver
         }
 
         // ! Empty means none, never all.
-        if (config.EnabledLibraryIds.Count == 0)
+        if (config.EnabledLibraryIds.Length == 0)
         {
             return false;
         }

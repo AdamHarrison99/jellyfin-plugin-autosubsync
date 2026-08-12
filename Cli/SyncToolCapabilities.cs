@@ -15,7 +15,10 @@ public static class SyncToolCapabilities
         => Formats.TryGetValue(tool, out var supported)
            && supported.Contains(extension, StringComparer.OrdinalIgnoreCase);
 
-    // Configured engines that accept the format, in the configured order.
+    // ! Deduplicated here; a stored chain is normalized only when the user saves one.
     public static IReadOnlyList<string> SelectChain(IEnumerable<string> toolChain, string extension)
-        => toolChain.Where(t => Supports(t, extension)).ToList();
+        => toolChain
+            .Where(t => Supports(t, extension))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
 }

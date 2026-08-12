@@ -2,7 +2,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.AutoSubSync.Cli;
 
-public record OcrRuntimeStatus(bool IsReady, string? SeConvPath, string? TesseractDirectory, string Message);
+public record SeConvStatus(bool IsReady, string? SeConvPath, string? TesseractDirectory, string Message);
 
 // Resolves the OCR toolchain: the pinned converter, and the Tesseract the admin installed.
 public class SeConvRuntime : PayloadRuntime
@@ -34,29 +34,44 @@ public class SeConvRuntime : PayloadRuntime
     public static string TesseractExecutableName
         => OperatingSystem.IsWindows() ? "tesseract.exe" : "tesseract";
 
-    public OcrRuntimeStatus GetOcrStatus()
+    // Text-only passes. Tesseract is reported when present but never required.
+    public SeConvStatus GetConverterStatus()
     {
         var payload = GetStatus();
-        if (!payload.IsReady || payload.ExecutablePath is not { } seconv)
-        {
-            return new OcrRuntimeStatus(false, null, null, payload.Message);
-        }
 
-        var tesseract = ResolveTesseractDirectory();
-        if (tesseract is null)
-        {
-            ReportMissingTesseract();
-            return new OcrRuntimeStatus(
-                false,
-                seconv,
-                null,
-                $"Tesseract is not installed on this server, and OCR cannot run without it. Install it, then restart Jellyfin: {InstallDocsUrl}");
-        }
-
-        return new OcrRuntimeStatus(true, seconv, tesseract, "OCR is ready.");
+        return payload.IsReady && payload.ExecutablePath is { } seconv
+            ? new SeConvStatus(true, seconv, ResolveTesseractDirectory(), payload.Message)
+            : new SeConvStatus(false, null, null, payload.Message);
     }
 
-    public async Task<OcrRuntimeStatus> EnsureOcrReadyAsync(CancellationToken cancellationToken)
+    public SeConvStatus GetOcrStatus()
+    {
+        var converter = GetConverterStatus();
+        if (!converter.IsReady)
+        {
+            return converter;
+        }
+
+        if (converter.TesseractDirectory is null)
+        {
+            ReportMissingTesseract();
+            return converter with
+            {
+                IsReady = false,
+                Message = $"Tesseract is not installed on this server, and OCR cannot run without it. Install it, then restart Jellyfin: {InstallDocsUrl}"
+            };
+        }
+
+        return converter;
+    }
+
+    public async Task<SeConvStatus> EnsureConverterReadyAsync(CancellationToken cancellationToken)
+    {
+        await EnsureReadyAsync(cancellationToken).ConfigureAwait(false);
+        return GetConverterStatus();
+    }
+
+    public async Task<SeConvStatus> EnsureOcrReadyAsync(CancellationToken cancellationToken)
     {
         await EnsureReadyAsync(cancellationToken).ConfigureAwait(false);
         return GetOcrStatus();

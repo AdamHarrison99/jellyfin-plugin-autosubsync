@@ -88,8 +88,7 @@ what it would have done.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| Engine fallback chain | `ffsubsync, alass` | Which alignment engines to try, in order. Also available: `autosubsync`. They differ in the formats they read, and one that cannot read a subtitle is skipped rather than failed. |
-| Maximum attempts | `2` (1–5) | How many engine runs a subtitle gets before it is left alone. A failed subtitle is retried only after it or its video changes. |
+| Engine fallback chain | `ffsubsync, alass, autosubsync` | Which alignment engines to try, in order. They differ in the formats they read, and one that cannot read a subtitle is skipped rather than failed. Each engine that reads the format is tried once; a subtitle none of them can align is left alone until it or its video changes. |
 
 ### Output
 

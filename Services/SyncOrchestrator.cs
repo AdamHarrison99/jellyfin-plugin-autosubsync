@@ -69,7 +69,7 @@ public class SyncOrchestrator
             if (IsExhausted(record, target, config))
             {
                 _logger.LogDebug(
-                    "{Item} ({Key}) is out of attempts and unchanged",
+                    "{Item} ({Key}) failed every engine and is unchanged since",
                     target.ItemName,
                     target.Key);
                 return record;
@@ -213,9 +213,7 @@ public class SyncOrchestrator
             CaptureFingerprint(record, target, target.SubtitlePath ?? inputPath);
 
             var extension = Path.GetExtension(inputPath);
-            var chain = SyncToolCapabilities.SelectChain(config.SyncToolChain, extension)
-                .Take(Math.Max(1, config.MaxAttempts))
-                .ToList();
+            var chain = SyncToolCapabilities.SelectChain(config.SyncToolChain, extension);
 
             if (chain.Count == 0)
             {
@@ -293,7 +291,7 @@ public class SyncOrchestrator
     {
         record.ToolUsed = SeConvToolName;
 
-        if (await _seConv.EnsureReadyAsync(cancellationToken).ConfigureAwait(false) is { } unavailable)
+        if (await _seConv.EnsureOcrReadyAsync(cancellationToken).ConfigureAwait(false) is { } unavailable)
         {
             record.Status = SyncStatus.Unsupported;
             record.Message = unavailable;
@@ -351,8 +349,8 @@ public class SyncOrchestrator
             return syncedPath;
         }
 
-        // ! Checked only once the file is known to need it; OCR is a large download.
-        if (await _seConv.EnsureReadyAsync(cancellationToken).ConfigureAwait(false) is { } unavailable)
+        // ! Checked only once the file is known to need it; the converter is a large download.
+        if (await _seConv.EnsureConverterReadyAsync(cancellationToken).ConfigureAwait(false) is { } unavailable)
         {
             RecordStage(record, SubtitleStageKind.Transform, StageOutcome.Skipped, unavailable, 0);
             return syncedPath;
@@ -551,10 +549,9 @@ public class SyncOrchestrator
         => (record.Status == SyncStatus.Synced || record.Status == SyncStatus.Skipped)
            && FingerprintMatches(record, target, subtitlePath);
 
-    // A failed record retries only once its inputs change, or the user asks for it.
+    // ! Every capable engine ran already. Identical inputs fail identically; only a change retries.
     internal static bool IsExhausted(SyncRecord record, SubtitleTarget target, PluginConfiguration config)
         => record.Status == SyncStatus.Failed
-           && record.AttemptCount >= config.MaxAttempts
            && FingerprintMatches(record, target, target.SubtitlePath);
 
     private static bool FingerprintMatches(SyncRecord record, SubtitleTarget target, string? subtitlePath)

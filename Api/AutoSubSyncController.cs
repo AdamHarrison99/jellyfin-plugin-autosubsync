@@ -1,4 +1,5 @@
 using Jellyfin.Plugin.AutoSubSync.Cli;
+using Jellyfin.Plugin.AutoSubSync.Configuration;
 using Jellyfin.Plugin.AutoSubSync.Data;
 using Jellyfin.Plugin.AutoSubSync.Models;
 using Jellyfin.Plugin.AutoSubSync.Services;
@@ -24,6 +25,7 @@ public class AutoSubSyncController : ControllerBase
     private readonly SyncQueue _queue;
     private readonly RollbackService _rollback;
     private readonly AssyRuntime _runtime;
+    private readonly SeConvRuntime _seConv;
     private readonly ILogger<AutoSubSyncController> _logger;
 
     public AutoSubSyncController(
@@ -34,6 +36,7 @@ public class AutoSubSyncController : ControllerBase
         SyncQueue queue,
         RollbackService rollback,
         AssyRuntime runtime,
+        SeConvRuntime seConv,
         ILogger<AutoSubSyncController> logger)
     {
         _store = store;
@@ -43,6 +46,7 @@ public class AutoSubSyncController : ControllerBase
         _queue = queue;
         _rollback = rollback;
         _runtime = runtime;
+        _seConv = seConv;
         _logger = logger;
     }
 
@@ -51,13 +55,11 @@ public class AutoSubSyncController : ControllerBase
     public ActionResult<object> GetStatus()
     {
         var records = _store.GetAll();
-        var engine = _runtime.GetStatus();
+        var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
 
         return Ok(new
         {
-            EngineReady = engine.IsReady,
-            EngineState = engine.Readiness.ToString(),
-            EngineMessage = engine.Message,
+            Dependencies = SummarizeDependencies(config),
 
             InFlight = _queue.InFlight,
             Total = records.Count,
@@ -67,7 +69,7 @@ public class AutoSubSyncController : ControllerBase
             DryRun = records.Count(r => r.Status == SyncStatus.DryRun),
             Unsupported = records.Count(r => r.Status == SyncStatus.Unsupported),
 
-            Stages = SummarizeStages(records),
+            Stages = SummarizeStages(records, config),
 
             UnsupportedReasons = records
                 .Where(r => r.Status == SyncStatus.Unsupported && r.Message is not null)
@@ -80,22 +82,71 @@ public class AutoSubSyncController : ControllerBase
         });
     }
 
-    // Every pipeline step, in pipeline order, whether or not it has run.
-    private static List<object> SummarizeStages(List<SyncRecord> records)
+    // ! Only what the settings ask for. A missing OCR tool is not a fault when OCR is off.
+    private List<object> SummarizeDependencies(PluginConfiguration config)
+    {
+        var assy = _runtime.GetStatus();
+
+        var dependencies = new List<object>
+        {
+            Dependency("Sync engine", assy.IsReady, assy.Message)
+        };
+
+        // ! Hearing-impaired stripping needs the converter, never Tesseract.
+        if (config.ConvertImageSubtitles || config.RemoveHearingImpairedTags)
+        {
+            var converter = _seConv.GetConverterStatus();
+            dependencies.Add(Dependency("Subtitle converter", converter.IsReady, converter.Message));
+        }
+
+        if (config.ConvertImageSubtitles)
+        {
+            var tesseract = SeConvRuntime.ResolveTesseractDirectory();
+            dependencies.Add(Dependency(
+                "Tesseract",
+                tesseract is not null,
+                tesseract is not null
+                    ? $"Tesseract is installed at {tesseract}."
+                    : "Tesseract is not installed on this server. Install it, then restart Jellyfin."));
+        }
+
+        return dependencies;
+    }
+
+    private static object Dependency(string name, bool ready, string message)
+        => new { Name = name, Ready = ready, Message = message };
+
+    // ! Only steps the settings actually turn on. Acquire is unbuilt, so it is not here.
+    private static List<object> SummarizeStages(List<SyncRecord> records, PluginConfiguration config)
     {
         var byKind = records.SelectMany(r => r.Stages).ToLookup(s => s.Kind);
 
-        return Enum.GetValues<SubtitleStageKind>()
-            .OrderBy(kind => kind)
-            .Select(kind => (object)new
+        var pipeline = new[]
+        {
+            (Kind: SubtitleStageKind.Convert, On: config.ConvertImageSubtitles),
+            (Kind: SubtitleStageKind.Sync, On: true),
+            (Kind: SubtitleStageKind.Transform, On: config.RemoveHearingImpairedTags),
+            (Kind: SubtitleStageKind.Deduplicate, On: config.DeduplicateSubtitles)
+        };
+
+        return pipeline
+            .Where(step => step.On)
+            .Select(step => (object)new
             {
-                Kind = kind.ToString(),
-                Succeeded = byKind[kind].Count(s => s.Outcome == StageOutcome.Succeeded),
-                Skipped = byKind[kind].Count(s => s.Outcome == StageOutcome.Skipped),
-                Failed = byKind[kind].Count(s => s.Outcome == StageOutcome.Failed),
-                ElapsedMs = byKind[kind].Sum(s => s.ElapsedMs)
+                Kind = step.Kind.ToString(),
+                Succeeded = byKind[step.Kind].Count(s => s.Outcome == StageOutcome.Succeeded),
+                Skipped = byKind[step.Kind].Count(s => s.Outcome == StageOutcome.Skipped),
+                Failed = byKind[step.Kind].Count(s => s.Outcome == StageOutcome.Failed),
+                AverageMs = AverageMs(byKind[step.Kind])
             })
             .ToList();
+    }
+
+    // ! Mean over the runs that were timed, never a lifetime total; a total only ever grows.
+    private static long? AverageMs(IEnumerable<SubtitleStage> stages)
+    {
+        var timed = stages.Where(s => s.ElapsedMs > 0).ToList();
+        return timed.Count == 0 ? null : (long)timed.Average(s => s.ElapsedMs);
     }
 
     // Queues the work and returns; does not wait for the sync.
