@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Auto Sub Sync</title>
+</head>
+<body>
+    <div id="AutoSubSyncConfigPage" data-role="page" class="page type-interior pluginConfigurationPage"
+         data-require="emby-input,emby-button,emby-checkbox,emby-select">
+
+        <style>
+            #AutoSubSyncConfigPage .checkboxContainer {
+                display: flex;
+                align-items: center;
+                margin: 0 0 0.35em 0;
+            }
+
+            #AutoSubSyncConfigPage .fieldDescription {
+                font-size: 88%;
+                opacity: 0.7;
+                margin: 0 0 1.25em 0;
+                max-width: 40em;
+                line-height: 1.4;
+            }
+
+            #AutoSubSyncConfigPage .fieldDescription.belowControl {
+                margin: 0.5em 0 1.25em 0;
+            }
+
+            #AutoSubSyncConfigPage .dependentOff {
+                opacity: 0.45;
+                pointer-events: none;
+            }
+
+            #AutoSubSyncConfigPage .inputLabel,
+            #AutoSubSyncConfigPage .selectLabel {
+                display: block;
+                margin-bottom: 0.25em;
+            }
+
+            #AutoSubSyncConfigPage .inputContainer,
+            #AutoSubSyncConfigPage .selectContainer {
+                display: block;
+                margin: 0;
+            }
+
+            /* One width for every control, sized to the longest option text. */
+            #AutoSubSyncConfigPage .selectContainer select,
+            #AutoSubSyncConfigPage .inputContainer input {
+                display: block;
+                width: 100%;
+                max-width: 24em;
+                box-sizing: border-box;
+            }
+        </style>
+
+        <div data-role="content">
+            <div class="content-primary">
+
+                <div id="dryRunBanner" class="padded-left padded-right"
+                     style="background:#fff3cd;color:#856404;padding:12px;border-radius:4px;margin-bottom:20px;display:none;">
+                    <strong>Dry run mode is ON</strong> &mdash; the plugin will not modify your filesystem.
+                    Review the results in the log, then disable to activate.
+                </div>
+
+                <div id="statusPanel" style="display:none;margin-bottom:1.5em;padding:1em;border-left:4px solid #00a4dc;background:rgba(0,164,220,0.08);">
+                    <strong>Status</strong>
+                    <div id="statusEngine" style="margin-top:0.5em;display:none;"></div>
+                    <div id="statusCounts" style="margin-top:0.5em;"></div>
+                    <div id="statusStages" style="margin-top:0.5em;opacity:0.85;"></div>
+                    <div id="statusUnsupported" style="margin-top:0.5em;opacity:0.85;"></div>
+                </div>
+
+                <form id="AutoSubSyncConfigForm">
+
+                    <h2>Safety</h2>
+
+                    <label class="checkboxContainer">
+                        <input is="emby-checkbox" type="checkbox" id="chkDryRun" />
+                        <span>Dry run mode</span>
+                    </label>
+                    <div class="fieldDescription">
+                        Discover and log everything, write nothing. Enabled by default on a fresh install.
+                    </div>
+
+                    <br />
+                    <h2>Scope</h2>
+
+                    <div class="selectContainer">
+                        <label class="selectLabel" for="selLibraries">Libraries</label>
+                        <select is="emby-select" id="selLibraries" multiple size="6"></select>
+                        <div class="fieldDescription">
+                            Select the libraries to process. Nothing selected means nothing runs.
+                        </div>
+                    </div>
+
+                    <label class="checkboxContainer">
+                        <input is="emby-checkbox" type="checkbox" id="chkExternal" />
+                        <span>Process external subtitle files</span>
+                    </label>
+                    <div class="fieldDescription">
+                        Sidecar files sitting next to your media.
+                    </div>
+
+                    <label class="checkboxContainer">
+                        <input is="emby-checkbox" type="checkbox" id="chkEmbedded" />
+                        <span>Process embedded subtitle tracks</span>
+                    </label>
+                    <div class="fieldDescription">
+                        Embedded tracks are extracted, synchronized, and written back as a separate
+                        subtitle file next to the media. The original file is never modified, so
+                        Jellyfin will list both the original embedded track and the synced one.
+                    </div>
+
+                    <div id="skipCoveredGroup">
+                        <label class="checkboxContainer">
+                            <input is="emby-checkbox" type="checkbox" id="chkSkipCovered" />
+                            <span>Skip embedded tracks when an external subtitle of the same language exists</span>
+                        </label>
+                        <div class="fieldDescription">
+                            Keeps the subtitle list short when a video already has a sidecar for a
+                            language. Note that a "Signs &amp; Songs" track is usually marked with the
+                            same language as the full subtitle, so this will skip it too.
+                        </div>
+                    </div>
+
+                    <label class="checkboxContainer">
+                        <input is="emby-checkbox" type="checkbox" id="chkConvertImage" />
+                        <span>Convert image-based subtitles to text</span>
+                    </label>
+                    <div class="fieldDescription">
+                        PGS, VobSub, and DVB tracks are pictures of text, which no alignment engine
+                        can read. Converting them by OCR produces a text subtitle that can then be
+                        synchronized. OCR is slow and never perfect; the result is written as a new
+                        file and the original track is left alone.
+                    </div>
+
+                    <label class="checkboxContainer">
+                        <input is="emby-checkbox" type="checkbox" id="chkRemoveHi" />
+                        <span>Remove hearing-impaired tags</span>
+                    </label>
+                    <div class="fieldDescription">
+                        Strips <code>[door creaks]</code>, <code>(SIGHS)</code>, and speaker labels
+                        from the subtitles that are written. Lines that consist only of such a tag
+                        are dropped entirely.
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="txtLanguages">Languages</label>
+                        <input is="emby-input" type="text" id="txtLanguages" />
+                        <div class="fieldDescription">
+                            Comma-separated language codes (<code>eng, spa</code> or <code>en, es</code>).
+                            Two- and three-letter forms both work and can be mixed. Leave empty for
+                            all languages.
+                        </div>
+                    </div>
+
+                    <br />
+                    <h2>Engines</h2>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="txtToolChain">Engine fallback chain</label>
+                        <input is="emby-input" type="text" id="txtToolChain" />
+                        <div class="fieldDescription">
+                            Comma-separated, tried in order: <code>ffsubsync</code>, <code>alass</code>,
+                            <code>autosubsync</code>. Every subtitle is aligned against the video's own
+                            audio.
+                        </div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="txtMaxAttempts">Maximum attempts</label>
+                        <input is="emby-input" type="number" id="txtMaxAttempts" min="1" max="5" />
+                        <div class="fieldDescription">
+                            How many engine runs a subtitle gets before it is left alone. A failed
+                            subtitle is tried again only after it or its video changes.
+                        </div>
+                    </div>
+
+                    <br />
+                    <h2>Output</h2>
+
+                    <div class="selectContainer">
+                        <label class="selectLabel" for="selWriteMode">Where to write synced external subtitles</label>
+                        <select is="emby-select" id="selWriteMode">
+                            <option value="Overwrite">Overwrite the original</option>
+                            <option value="SideBySide">Write a new file alongside the original</option>
+                        </select>
+                        <div class="fieldDescription">
+                            Embedded tracks always become new sidecar files; this setting only
+                            affects subtitles that are already separate files. Overwriting always
+                            backs the original up first, into the plugin's own data folder and never
+                            beside your media. If the backup cannot be written, the original is left
+                            alone.
+                        </div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="txtMinimumOffset">Minimum offset (ms)</label>
+                        <input is="emby-input" type="number" id="txtMinimumOffset" min="0" />
+                        <div class="fieldDescription">
+                            Discard a result that moves the subtitle less than this. Prevents writing
+                            files for subtitles that were already correct. Below roughly 50 ms a
+                            shift is imperceptible; above it, people notice.
+                        </div>
+                    </div>
+
+                    <br />
+                    <h2>Throttling</h2>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="txtConcurrency">Concurrent syncs</label>
+                        <input is="emby-input" type="number" id="txtConcurrency" min="0" max="8" />
+                        <div class="fieldDescription">
+                            Each sync reads the whole video file to analyse its audio, so the limit
+                            is often your storage rather than your CPU.
+                            <strong>0 = automatic</strong>: starts at one, measures how much work
+                            actually completes, and adds more only while that helps — never taking
+                            more than half of your cores. Set a number to override it; on
+                            network storage a lower number is usually faster, not slower.
+                        </div>
+                    </div>
+
+                    <br />
+                    <h2>Automation</h2>
+
+                    <label class="checkboxContainer">
+                        <input is="emby-checkbox" type="checkbox" id="chkAutoOnAdd" />
+                        <span>Synchronize new items as they are added</span>
+                    </label>
+                    <div class="fieldDescription">
+                        Runs as soon as a video appears in a selected library, instead of waiting for
+                        the next scheduled sync.
+                    </div>
+
+                    <label class="checkboxContainer">
+                        <input is="emby-checkbox" type="checkbox" id="chkRefreshAfter" />
+                        <span>Refresh the item after writing a subtitle</span>
+                    </label>
+                    <div class="fieldDescription">
+                        Makes a new subtitle show up in Jellyfin straight away. Leave this off if
+                        your library scans are slow.
+                    </div>
+
+                    <br />
+                    <div>
+                        <button is="emby-button" type="submit" class="raised button-submit block">
+                            <span>Save</span>
+                        </button>
+                    </div>
+                </form>
+
+                <br />
+                <h2>Actions</h2>
+
+                <button is="emby-button" type="button" id="btnRunNow" class="raised block">
+                    <span>Run full sync now</span>
+                </button>
+                <div class="fieldDescription belowControl">
+                    Starts the "Full Library Sync" scheduled task immediately.
+                </div>
+
+                <br />
+                <h2>Danger zone</h2>
+
+                <button is="emby-button" type="button" id="btnRollback" class="raised block">
+                    <span>Roll back everything</span>
+                </button>
+                <div class="fieldDescription belowControl">
+                    Restores every backed-up subtitle over the version this plugin wrote and deletes
+                    every subtitle file this plugin created. Your media files are never touched.
+                </div>
+
+                <button is="emby-button" type="button" id="btnClearDatabase" class="raised block">
+                    <span>Clear database</span>
+                </button>
+                <div class="fieldDescription belowControl">
+                    Forgets what has already been synchronized without changing any files. The next
+                    scan will re-examine everything. Backups are kept in the plugin's data folder
+                    and indexed only by this database — clearing it leaves them on disk with no way
+                    to restore them automatically.
+                </div>
+
+            </div>
+        </div>
+
+        <script type="text/javascript">
+            (function () {
+                var pluginUniqueId = '6dbc32c5-1c68-481e-b066-9521552a2615';
+                var fullSyncTaskKey = 'AutoSubSyncFullLibrarySync';
+
+                function splitList(value) {
+                    return (value || '')
+                        .split(',')
+                        .map(function (s) { return s.trim(); })
+                        .filter(function (s) { return s.length > 0; });
+                }
+
+                function readInt(page, id, fallback, min, max) {
+                    var parsed = parseInt(page.querySelector(id).value, 10);
+                    if (isNaN(parsed)) {
+                        return fallback;
+                    }
+                    return Math.min(Math.max(parsed, min), max);
+                }
+
+                function selectedValues(select) {
+                    return Array.prototype.slice.call(select.selectedOptions).map(function (o) { return o.value; });
+                }
+
+                function loadLibraries(page, selectedIds) {
+                    return ApiClient.getVirtualFolders().then(function (folders) {
+                        var select = page.querySelector('#selLibraries');
+                        select.innerHTML = folders.map(function (f) {
+                            var selected = selectedIds.indexOf(f.ItemId) !== -1 ? ' selected' : '';
+                            return '<option value="' + f.ItemId + '"' + selected + '>' + f.Name + '</option>';
+                        }).join('');
+                    });
+                }
+
+                function escapeHtml(value) {
+                    return String(value).replace(/[&<>"']/g, function (c) {
+                        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+                    });
+                }
+
+                function updateDryRunBanner(page, isDryRun) {
+                    page.querySelector('#dryRunBanner').style.display = isDryRun ? 'block' : 'none';
+                }
+
+                function formatDuration(ms) {
+                    var seconds = Math.round((ms || 0) / 1000);
+                    if (seconds < 60) {
+                        return seconds + 's';
+                    }
+                    var minutes = Math.floor(seconds / 60);
+                    if (minutes < 60) {
+                        return minutes + 'm ' + (seconds % 60) + 's';
+                    }
+                    return Math.floor(minutes / 60) + 'h ' + (minutes % 60) + 'm';
+                }
+
+                // Sync is the headline count above; these are the steps around it.
+                var stageLabels = {
+                    Convert: { name: 'OCR', succeeded: 'converted', skipped: 'skipped' },
+                    Transform: { name: 'Hearing-impaired text', succeeded: 'stripped', skipped: 'left as-is' }
+                };
+
+                function stageLine(stage) {
+                    var label = stageLabels[stage.Kind];
+                    if (!label) {
+                        return null;
+                    }
+
+                    var parts = [];
+                    if (stage.Succeeded) {
+                        parts.push(stage.Succeeded + ' ' + label.succeeded);
+                    }
+                    if (stage.Skipped) {
+                        parts.push(stage.Skipped + ' ' + label.skipped);
+                    }
+                    if (stage.Failed) {
+                        parts.push(stage.Failed + ' failed');
+                    }
+                    if (!parts.length) {
+                        return null;
+                    }
+
+                    var line = label.name + ' — ' + parts.join(', ');
+                    if (stage.ElapsedMs) {
+                        line += ' (' + formatDuration(stage.ElapsedMs) + ' of work)';
+                    }
+                    return line;
+                }
+
+                function renderStages(page, stages) {
+                    var lines = (stages || []).map(stageLine).filter(function (l) { return l; });
+                    page.querySelector('#statusStages').innerHTML = lines.map(escapeHtml).join('<br />');
+                }
+
+                // Nothing to skip when embedded tracks are not being processed at all.
+                function updateSkipCoveredState(page, embeddedEnabled) {
+                    page.querySelector('#chkSkipCovered').disabled = !embeddedEnabled;
+                    page.querySelector('#skipCoveredGroup')
+                        .classList.toggle('dependentOff', !embeddedEnabled);
+                }
+
+                function loadStatus(page) {
+                    ApiClient.ajax({
+                        type: 'GET',
+                        url: ApiClient.getUrl('AutoSubSync/Status'),
+                        dataType: 'json'
+                    }).then(function (status) {
+                        if (!status) {
+                            page.querySelector('#statusPanel').style.display = 'none';
+                            return;
+                        }
+
+                        // A server with no engine yet has no records to show either.
+                        var engineWarning = status.EngineReady ? '' : (status.EngineMessage || '');
+                        var engineElement = page.querySelector('#statusEngine');
+                        engineElement.textContent = engineWarning;
+                        engineElement.style.display = engineWarning ? '' : 'none';
+
+                        if (!status.Total) {
+                            page.querySelector('#statusCounts').textContent = '';
+                            page.querySelector('#statusStages').innerHTML = '';
+                            page.querySelector('#statusUnsupported').innerHTML = '';
+                            page.querySelector('#statusPanel').style.display = engineWarning ? '' : 'none';
+                            return;
+                        }
+
+                        page.querySelector('#statusCounts').textContent =
+                            status.Total + ' subtitle track(s) seen — '
+                            + status.Synced + ' synced, '
+                            + status.Skipped + ' already in sync, '
+                            + status.Failed + ' failed, '
+                            + status.Unsupported + ' unsupported, '
+                            + status.DryRun + ' pending dry run. '
+                            + status.InFlight + ' running now.';
+
+                        renderStages(page, status.Stages);
+
+                        var reasons = status.UnsupportedReasons || [];
+                        page.querySelector('#statusUnsupported').innerHTML = reasons.length
+                            ? reasons.map(function (r) {
+                                return escapeHtml(r.Count + ' × ' + r.Reason);
+                            }).join('<br />')
+                            : '';
+
+                        page.querySelector('#statusPanel').style.display = '';
+                    }, function () {
+                        page.querySelector('#statusPanel').style.display = 'none';
+                    });
+                }
+
+                function load(page) {
+                    Dashboard.showLoadingMsg();
+                    loadStatus(page);
+
+                    ApiClient.getPluginConfiguration(pluginUniqueId).then(function (config) {
+                        page.querySelector('#chkDryRun').checked = config.DryRunMode;
+                        updateDryRunBanner(page, config.DryRunMode);
+
+                        page.querySelector('#chkExternal').checked = config.ProcessExternalSubtitles;
+                        page.querySelector('#chkEmbedded').checked = config.ProcessEmbeddedSubtitles;
+                        page.querySelector('#chkSkipCovered').checked = config.SkipEmbeddedWhenExternalExists;
+                        updateSkipCoveredState(page, config.ProcessEmbeddedSubtitles);
+                        page.querySelector('#chkConvertImage').checked = config.ConvertImageSubtitles;
+                        page.querySelector('#chkRemoveHi').checked = config.RemoveHearingImpairedTags;
+                        page.querySelector('#txtLanguages').value = (config.LanguageAllowList || []).join(', ');
+
+                        page.querySelector('#txtToolChain').value = (config.SyncToolChain || []).join(', ');
+                        page.querySelector('#txtMaxAttempts').value = config.MaxAttempts;
+
+                        page.querySelector('#selWriteMode').value = config.ExternalWriteMode;
+                        page.querySelector('#txtMinimumOffset').value = config.MinimumOffsetMs;
+
+                        page.querySelector('#txtConcurrency').value = config.MaxConcurrentSyncs;
+
+                        page.querySelector('#chkAutoOnAdd').checked = config.AutoSyncOnItemAdded;
+                        page.querySelector('#chkRefreshAfter').checked = config.RefreshItemAfterSync;
+
+                        return loadLibraries(page, config.EnabledLibraryIds || []);
+                    }).then(function () {
+                        Dashboard.hideLoadingMsg();
+                    }, function () {
+                        Dashboard.hideLoadingMsg();
+                        Dashboard.alert('Failed to load plugin configuration. Check the server log.');
+                    });
+                }
+
+                function save(page) {
+                    Dashboard.showLoadingMsg();
+
+                    ApiClient.getPluginConfiguration(pluginUniqueId).then(function (config) {
+                        config.DryRunMode = page.querySelector('#chkDryRun').checked;
+
+                        config.EnabledLibraryIds = selectedValues(page.querySelector('#selLibraries'));
+                        config.ProcessExternalSubtitles = page.querySelector('#chkExternal').checked;
+                        config.ProcessEmbeddedSubtitles = page.querySelector('#chkEmbedded').checked;
+                        config.SkipEmbeddedWhenExternalExists = page.querySelector('#chkSkipCovered').checked;
+                        config.ConvertImageSubtitles = page.querySelector('#chkConvertImage').checked;
+                        config.RemoveHearingImpairedTags = page.querySelector('#chkRemoveHi').checked;
+                        config.LanguageAllowList = splitList(page.querySelector('#txtLanguages').value);
+
+                        config.SyncToolChain = splitList(page.querySelector('#txtToolChain').value);
+                        config.MaxAttempts = readInt(page, '#txtMaxAttempts', 2, 1, 5);
+
+                        config.MinimumOffsetMs = readInt(page, '#txtMinimumOffset', 50, 0, 600000);
+                        config.MaxConcurrentSyncs = readInt(page, '#txtConcurrency', 0, 0, 8);
+
+                        config.AutoSyncOnItemAdded = page.querySelector('#chkAutoOnAdd').checked;
+                        config.RefreshItemAfterSync = page.querySelector('#chkRefreshAfter').checked;
+
+                        return ApiClient.updatePluginConfiguration(pluginUniqueId, config);
+                    }).then(function (result) {
+                        Dashboard.processPluginConfigurationUpdateResult(result);
+                        load(page);
+                    }, function () {
+                        Dashboard.hideLoadingMsg();
+                        Dashboard.alert('Failed to save configuration.');
+                    });
+                }
+
+                document.querySelector('#AutoSubSyncConfigPage').addEventListener('pageshow', function () {
+                    load(this);
+                });
+
+                document.querySelector('#chkDryRun').addEventListener('change', function () {
+                    updateDryRunBanner(document.querySelector('#AutoSubSyncConfigPage'), this.checked);
+                });
+
+                document.querySelector('#chkEmbedded').addEventListener('change', function () {
+                    updateSkipCoveredState(document.querySelector('#AutoSubSyncConfigPage'), this.checked);
+                });
+
+                document.querySelector('#AutoSubSyncConfigForm').addEventListener('submit', function (e) {
+                    e.preventDefault();
+                    save(document.querySelector('#AutoSubSyncConfigPage'));
+                    return false;
+                });
+
+                document.querySelector('#btnRunNow').addEventListener('click', function () {
+                    ApiClient.getScheduledTasks().then(function (tasks) {
+                        var task = tasks.filter(function (t) { return t.Key === fullSyncTaskKey; })[0];
+                        if (!task) {
+                            Dashboard.alert('Could not find the Full Library Sync task.');
+                            return;
+                        }
+                        ApiClient.startScheduledTask(task.Id).then(function () {
+                            Dashboard.alert('Full library sync started.');
+                        });
+                    });
+                });
+
+                document.querySelector('#btnRollback').addEventListener('click', function () {
+                    var message = 'Undo everything this plugin has done?\n\n'
+                        + 'Subtitles it overwrote are restored from their backups, and subtitle files '
+                        + 'it created are deleted. Its record of what was synchronized is cleared.';
+
+                    if (!confirm(message)) {
+                        return;
+                    }
+
+                    Dashboard.showLoadingMsg();
+
+                    ApiClient.ajax({
+                        type: 'POST',
+                        url: ApiClient.getUrl('AutoSubSync/RollbackAll'),
+                        dataType: 'json'
+                    }).then(function (report) {
+                        Dashboard.hideLoadingMsg();
+                        Dashboard.alert(
+                            'Rollback finished: ' + report.Restored + ' restored, '
+                            + report.Deleted + ' deleted, ' + report.Skipped + ' skipped, '
+                            + report.Failed + ' failed.');
+                        loadStatus(document);
+                    }, function () {
+                        Dashboard.hideLoadingMsg();
+                        Dashboard.alert('Rollback failed, or syncs are still running. Check the server log.');
+                    });
+                });
+
+                document.querySelector('#btnClearDatabase').addEventListener('click', function () {
+                    var message = 'Forget everything this plugin has already synchronized?\n\n'
+                        + 'No files will change, but the next scan will re-examine your whole library. '
+                        + 'Any backups this plugin has taken will be left in its data folder with no '
+                        + 'record of what they belong to.';
+
+                    if (!confirm(message)) {
+                        return;
+                    }
+
+                    ApiClient.ajax({
+                        type: 'POST',
+                        url: ApiClient.getUrl('AutoSubSync/ClearDatabase')
+                    }).then(function () {
+                        Dashboard.alert('Database cleared.');
+                    }, function () {
+                        Dashboard.alert('Failed to clear the database.');
+                    });
+                });
+            })();
+        </script>
+    </div>
+</body>
+</html>

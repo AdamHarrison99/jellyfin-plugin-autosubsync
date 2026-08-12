@@ -1,0 +1,11 @@
+[
+  {
+    "guid": "6dbc32c5-1c68-481e-b066-9521552a2615",
+    "name": "AutoSubSync",
+    "description": "Automatically synchronizes external and embedded subtitles across your library, aligning each one against the audio of the media it belongs to. The sync engine is downloaded once on first use and verified against a checksum built into the plugin.",
+    "overview": "Automatically synchronizes external and embedded subtitles across your library.",
+    "owner": "AdamHarrison99",
+    "category": "General",
+    "versions": []
+  }
+]
