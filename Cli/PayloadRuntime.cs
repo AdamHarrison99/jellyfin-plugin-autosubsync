@@ -85,7 +85,7 @@ public class PayloadRuntime
         return GetStatus();
     }
 
-    // ! One attempt per cooldown. Item-added events would otherwise retry on every new file.
+    // ! One attempt per cooldown. Item-added events retry on every new file.
     private bool ClaimAttempt()
     {
         lock (_gate)

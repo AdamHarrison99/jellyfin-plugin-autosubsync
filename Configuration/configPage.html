@@ -86,6 +86,122 @@
                 background: #d9534f;
                 color: #fff;
             }
+
+            /* ! Grey alphas only; this page renders on light and dark themes. */
+            #AutoSubSyncConfigPage .statusPanel {
+                margin-bottom: 1.75em;
+                padding: 1.1em 1.25em 1.25em 1.25em;
+                border: 1px solid rgba(128, 128, 128, 0.3);
+                border-left: 4px solid #00a4dc;
+                border-radius: 5px;
+                background: rgba(128, 128, 128, 0.07);
+            }
+
+            #AutoSubSyncConfigPage .statusTitle {
+                font-size: 88%;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+                opacity: 0.65;
+            }
+
+            #AutoSubSyncConfigPage .statusHeading {
+                font-size: 82%;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+                opacity: 0.6;
+                margin: 1.4em 0 0.5em 0;
+            }
+
+            #AutoSubSyncConfigPage .statusEngine {
+                margin-top: 0.7em;
+                padding: 0.5em 0.75em;
+                border-radius: 4px;
+                background: rgba(128, 128, 128, 0.16);
+                font-size: 92%;
+            }
+
+            #AutoSubSyncConfigPage .statusEngine.isWarning {
+                background: rgba(217, 83, 79, 0.16);
+                color: #d9534f;
+            }
+
+            #AutoSubSyncConfigPage .statGrid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(7em, 1fr));
+                gap: 0.55em;
+                margin-top: 0.9em;
+            }
+
+            #AutoSubSyncConfigPage .stat {
+                padding: 0.6em 0.5em;
+                border-radius: 4px;
+                background: rgba(128, 128, 128, 0.16);
+                text-align: center;
+            }
+
+            #AutoSubSyncConfigPage .statValue {
+                display: block;
+                font-size: 1.55em;
+                font-weight: 600;
+                line-height: 1.1;
+            }
+
+            #AutoSubSyncConfigPage .statLabel {
+                display: block;
+                font-size: 76%;
+                opacity: 0.72;
+                margin-top: 0.25em;
+            }
+
+            #AutoSubSyncConfigPage .stat.isFailed .statValue {
+                color: #d9534f;
+            }
+
+            #AutoSubSyncConfigPage .stat.isActive .statValue {
+                color: #00a4dc;
+            }
+
+            #AutoSubSyncConfigPage .stageTable {
+                width: 100%;
+                border-collapse: collapse;
+                font-size: 92%;
+            }
+
+            #AutoSubSyncConfigPage .stageTable th {
+                text-align: left;
+                font-size: 82%;
+                font-weight: 600;
+                text-transform: uppercase;
+                letter-spacing: 0.04em;
+                opacity: 0.6;
+                padding: 0 0.5em 0.45em 0;
+            }
+
+            #AutoSubSyncConfigPage .stageTable td {
+                padding: 0.45em 0.5em 0.45em 0;
+                border-top: 1px solid rgba(128, 128, 128, 0.25);
+            }
+
+            #AutoSubSyncConfigPage .stageTable th.num,
+            #AutoSubSyncConfigPage .stageTable td.num {
+                text-align: right;
+                width: 5.5em;
+                font-variant-numeric: tabular-nums;
+            }
+
+            #AutoSubSyncConfigPage .stageTable tr.isIdle {
+                opacity: 0.45;
+            }
+
+            #AutoSubSyncConfigPage .stageTable td.isFailed {
+                color: #d9534f;
+            }
+
+            #AutoSubSyncConfigPage .statusReasons {
+                font-size: 92%;
+                opacity: 0.85;
+                line-height: 1.5;
+            }
         </style>
 
         <div data-role="content">
@@ -97,12 +213,26 @@
                     Review the results in the log, then disable to activate.
                 </div>
 
-                <div id="statusPanel" style="display:none;margin-bottom:1.5em;padding:1em;border-left:4px solid #00a4dc;background:rgba(0,164,220,0.08);">
-                    <strong>Status</strong>
-                    <div id="statusEngine" style="margin-top:0.5em;display:none;"></div>
-                    <div id="statusCounts" style="margin-top:0.5em;"></div>
-                    <div id="statusStages" style="margin-top:0.5em;opacity:0.85;"></div>
-                    <div id="statusUnsupported" style="margin-top:0.5em;opacity:0.85;"></div>
+                <div id="statusPanel" class="statusPanel" style="display:none;">
+                    <div class="statusTitle">Status</div>
+                    <div id="statusEngine" class="statusEngine"></div>
+                    <div id="statusCounts" class="statGrid"></div>
+
+                    <div class="statusHeading">Pipeline</div>
+                    <table class="stageTable">
+                        <thead>
+                            <tr>
+                                <th>Stage</th>
+                                <th class="num">Done</th>
+                                <th class="num">Skipped</th>
+                                <th class="num">Failed</th>
+                                <th class="num">Time</th>
+                            </tr>
+                        </thead>
+                        <tbody id="statusStages"></tbody>
+                    </table>
+
+                    <div id="statusUnsupported"></div>
                 </div>
 
                 <form id="AutoSubSyncConfigForm">
@@ -399,42 +529,46 @@
                     return Math.floor(minutes / 60) + 'h ' + (minutes % 60) + 'm';
                 }
 
-                // Sync is the headline count above; these are the steps around it.
                 var stageLabels = {
-                    Convert: { name: 'OCR', succeeded: 'converted', skipped: 'skipped' },
-                    Transform: { name: 'Hearing-impaired text', succeeded: 'stripped', skipped: 'left as-is' }
+                    Acquire: 'Extraction',
+                    Convert: 'OCR (image to text)',
+                    Sync: 'Synchronization',
+                    Transform: 'Hearing-impaired text',
+                    Deduplicate: 'Duplicate removal'
                 };
 
-                function stageLine(stage) {
-                    var label = stageLabels[stage.Kind];
-                    if (!label) {
-                        return null;
-                    }
+                function statCard(value, label, modifier) {
+                    return '<div class="stat' + (modifier ? ' ' + modifier : '') + '">'
+                        + '<span class="statValue">' + escapeHtml(value || 0) + '</span>'
+                        + '<span class="statLabel">' + escapeHtml(label) + '</span>'
+                        + '</div>';
+                }
 
-                    var parts = [];
-                    if (stage.Succeeded) {
-                        parts.push(stage.Succeeded + ' ' + label.succeeded);
-                    }
-                    if (stage.Skipped) {
-                        parts.push(stage.Skipped + ' ' + label.skipped);
-                    }
-                    if (stage.Failed) {
-                        parts.push(stage.Failed + ' failed');
-                    }
-                    if (!parts.length) {
-                        return null;
-                    }
+                function renderCounts(page, status) {
+                    page.querySelector('#statusCounts').innerHTML =
+                        statCard(status.Total, 'tracks seen')
+                        + statCard(status.Synced, 'synced')
+                        + statCard(status.Skipped, 'already in sync')
+                        + statCard(status.Failed, 'failed', status.Failed ? 'isFailed' : '')
+                        + statCard(status.Unsupported, 'unsupported')
+                        + statCard(status.DryRun, 'pending dry run')
+                        + statCard(status.InFlight, 'running now', status.InFlight ? 'isActive' : '');
+                }
 
-                    var line = label.name + ' — ' + parts.join(', ');
-                    if (stage.ElapsedMs) {
-                        line += ' (' + formatDuration(stage.ElapsedMs) + ' of work)';
-                    }
-                    return line;
+                function stageRow(stage) {
+                    var idle = !stage.Succeeded && !stage.Skipped && !stage.Failed;
+
+                    return '<tr' + (idle ? ' class="isIdle"' : '') + '>'
+                        + '<td>' + escapeHtml(stageLabels[stage.Kind] || stage.Kind) + '</td>'
+                        + '<td class="num">' + escapeHtml(stage.Succeeded) + '</td>'
+                        + '<td class="num">' + escapeHtml(stage.Skipped) + '</td>'
+                        + '<td class="num' + (stage.Failed ? ' isFailed' : '') + '">' + escapeHtml(stage.Failed) + '</td>'
+                        + '<td class="num">' + escapeHtml(stage.ElapsedMs ? formatDuration(stage.ElapsedMs) : '—') + '</td>'
+                        + '</tr>';
                 }
 
                 function renderStages(page, stages) {
-                    var lines = (stages || []).map(stageLine).filter(function (l) { return l; });
-                    page.querySelector('#statusStages').innerHTML = lines.map(escapeHtml).join('<br />');
+                    page.querySelector('#statusStages').innerHTML = (stages || []).map(stageRow).join('');
                 }
 
                 // Nothing to skip when embedded tracks are not being processed at all.
@@ -455,36 +589,22 @@
                             return;
                         }
 
-                        // A server with no engine yet has no records to show either.
-                        var engineWarning = status.EngineReady ? '' : (status.EngineMessage || '');
                         var engineElement = page.querySelector('#statusEngine');
-                        engineElement.textContent = engineWarning;
-                        engineElement.style.display = engineWarning ? '' : 'none';
+                        engineElement.textContent = status.EngineMessage
+                            || (status.EngineReady ? 'Sync engine ready.' : 'Sync engine unavailable.');
+                        engineElement.classList.toggle('isWarning', !status.EngineReady);
 
-                        if (!status.Total) {
-                            page.querySelector('#statusCounts').textContent = '';
-                            page.querySelector('#statusStages').innerHTML = '';
-                            page.querySelector('#statusUnsupported').innerHTML = '';
-                            page.querySelector('#statusPanel').style.display = engineWarning ? '' : 'none';
-                            return;
-                        }
-
-                        page.querySelector('#statusCounts').textContent =
-                            status.Total + ' subtitle track(s) seen — '
-                            + status.Synced + ' synced, '
-                            + status.Skipped + ' already in sync, '
-                            + status.Failed + ' failed, '
-                            + status.Unsupported + ' unsupported, '
-                            + status.DryRun + ' pending dry run. '
-                            + status.InFlight + ' running now.';
-
+                        renderCounts(page, status);
                         renderStages(page, status.Stages);
 
                         var reasons = status.UnsupportedReasons || [];
                         page.querySelector('#statusUnsupported').innerHTML = reasons.length
-                            ? reasons.map(function (r) {
-                                return escapeHtml(r.Count + ' × ' + r.Reason);
-                            }).join('<br />')
+                            ? '<div class="statusHeading">Unsupported tracks</div>'
+                                + '<div class="statusReasons">'
+                                + reasons.map(function (r) {
+                                    return escapeHtml(r.Count + ' × ' + r.Reason);
+                                }).join('<br />')
+                                + '</div>'
                             : '';
 
                         page.querySelector('#statusPanel').style.display = '';

@@ -18,7 +18,8 @@ public class BackupVault
     public string Root => _root;
 
     // ! Never place a backup beside the media; Jellyfin indexes sidecars by filename.
-    public string? Store(Guid recordId, string originalPath)
+    // ! Unlabelled, a second copy collides with the pre-overwrite original and is dropped.
+    public string? Store(Guid recordId, string originalPath, string? label = null)
     {
         try
         {
@@ -30,7 +31,11 @@ public class BackupVault
             var directory = Path.Combine(_root, recordId.ToString("N"));
             Directory.CreateDirectory(directory);
 
-            var destination = Path.Combine(directory, Path.GetFileName(originalPath));
+            var name = label is null
+                ? Path.GetFileName(originalPath)
+                : label + "-" + Path.GetFileName(originalPath);
+
+            var destination = Path.Combine(directory, name);
 
             if (File.Exists(destination))
             {

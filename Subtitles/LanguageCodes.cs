@@ -63,7 +63,7 @@ public static class LanguageCodes
             : FromCultureInfo(trimmed) ?? trimmed;
     }
 
-    // ! Mirrors Jellyfin's own rule: keep a script-bearing locale, otherwise emit 639-2/T.
+    // ! Mirrors Jellyfin's own rule: keep a script-bearing locale, else emit 639-2/T.
     public static string? ForFilename(string? code)
     {
         if (string.IsNullOrWhiteSpace(code))

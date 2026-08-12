@@ -80,21 +80,23 @@ public class AutoSubSyncController : ControllerBase
         });
     }
 
-    // One row per pipeline step that has actually run, in pipeline order.
+    // Every pipeline step, in pipeline order, whether or not it has run.
     private static List<object> SummarizeStages(List<SyncRecord> records)
-        => records
-            .SelectMany(r => r.Stages)
-            .GroupBy(s => s.Kind)
-            .OrderBy(g => g.Key)
-            .Select(g => (object)new
+    {
+        var byKind = records.SelectMany(r => r.Stages).ToLookup(s => s.Kind);
+
+        return Enum.GetValues<SubtitleStageKind>()
+            .OrderBy(kind => kind)
+            .Select(kind => (object)new
             {
-                Kind = g.Key.ToString(),
-                Succeeded = g.Count(s => s.Outcome == StageOutcome.Succeeded),
-                Skipped = g.Count(s => s.Outcome == StageOutcome.Skipped),
-                Failed = g.Count(s => s.Outcome == StageOutcome.Failed),
-                ElapsedMs = g.Sum(s => s.ElapsedMs)
+                Kind = kind.ToString(),
+                Succeeded = byKind[kind].Count(s => s.Outcome == StageOutcome.Succeeded),
+                Skipped = byKind[kind].Count(s => s.Outcome == StageOutcome.Skipped),
+                Failed = byKind[kind].Count(s => s.Outcome == StageOutcome.Failed),
+                ElapsedMs = byKind[kind].Sum(s => s.ElapsedMs)
             })
             .ToList();
+    }
 
     // Queues the work and returns; does not wait for the sync.
     [HttpPost("SyncItem/{itemId}")]

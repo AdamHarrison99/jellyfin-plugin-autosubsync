@@ -99,7 +99,7 @@ public class FullLibrarySyncTask : IScheduledTask
         _logger.LogInformation("AutoSubSync full scan finished");
     }
 
-    // Drops records for items no longer in the library, and their backups.
+    // Drops records for items missing from the library, and their backups.
     private void Prune()
     {
         // ! Both must be gone. Removing a record whose backup survives strands that backup.

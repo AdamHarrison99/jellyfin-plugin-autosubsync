@@ -5,6 +5,9 @@ public static class SubtitleContent
 {
     private const int MaxLinesScanned = 4000;
 
+    // ! Bounds a corrupt or mislabelled file. Real subtitles are far below this.
+    private const int MaxLinesRead = 400_000;
+
     private static readonly string[] VttBlockHeaders = { "WEBVTT", "NOTE", "STYLE", "REGION" };
 
     private enum SubtitleFormat
@@ -45,15 +48,13 @@ public static class SubtitleContent
         return format == SubtitleFormat.Unknown;
     }
 
-    public static bool SameFormat(string leftPath, string rightPath)
+    // Null when the format is unknown; equal keys mean same format and same extension.
+    public static string? FormatKey(string path)
     {
-        var format = FormatOf(leftPath);
-        return format != SubtitleFormat.Unknown
-            && format == FormatOf(rightPath)
-            && string.Equals(
-                Path.GetExtension(leftPath),
-                Path.GetExtension(rightPath),
-                StringComparison.OrdinalIgnoreCase);
+        var format = FormatOf(path);
+        return format == SubtitleFormat.Unknown
+            ? null
+            : format + "|" + Path.GetExtension(path).ToLowerInvariant();
     }
 
     // One element per styling decision: style definitions, per-cue style, and inline markup.
@@ -385,7 +386,9 @@ public static class SubtitleContent
 
         using (enumerator)
         {
-            while (true)
+            var read = 0;
+
+            while (read++ < MaxLinesRead)
             {
                 try
                 {

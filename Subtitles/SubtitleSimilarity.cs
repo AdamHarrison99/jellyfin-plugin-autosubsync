@@ -8,38 +8,75 @@ public readonly record struct SimilarityScore(double Content, double Formatting)
     public bool Matches(double threshold) => Content >= threshold && Formatting >= threshold;
 }
 
+// Everything scoring needs from one file, read once.
+public sealed class SubtitleProfile
+{
+    public required string FormatKey { get; init; }
+
+    public required int CueCount { get; init; }
+
+    public required Dictionary<string, int> Bigrams { get; init; }
+
+    public required Dictionary<string, int> Declarations { get; init; }
+
+    public required Dictionary<string, int> Usage { get; init; }
+
+    public static SubtitleProfile? Read(string path)
+    {
+        if (SubtitleContent.FormatKey(path) is not string key)
+        {
+            return null;
+        }
+
+        var cues = SubtitleContent.ReadCues(path).ToList();
+        var formatting = SubtitleContent.ReadFormatting(path).ToList();
+
+        return new SubtitleProfile
+        {
+            FormatKey = key,
+            CueCount = cues.Count,
+            Bigrams = SubtitleSimilarity.Tally(SubtitleSimilarity.Bigrams(cues)),
+            Declarations = SubtitleSimilarity.Tally(formatting.Where(SubtitleSimilarity.IsDeclaration)),
+            Usage = SubtitleSimilarity.Tally(formatting.Where(t => !SubtitleSimilarity.IsDeclaration(t)))
+        };
+    }
+}
+
 // Scores how much two subtitle files share, ignoring case, whitespace and cue boundaries.
 public static class SubtitleSimilarity
 {
     // Below this a match is coincidence: forced tracks are a handful of cues.
     public const int MinimumCues = 10;
 
-    // ! A .srt and a .ass are never duplicates, whatever their cues say. One carries styling
-    //   the other cannot express, so collapsing them loses it.
     public static SimilarityScore Compare(string leftPath, string rightPath)
+        => Compare(SubtitleProfile.Read(leftPath), SubtitleProfile.Read(rightPath));
+
+    // ! A .srt and a .ass are never duplicates, whatever their cues say.
+    public static SimilarityScore Compare(SubtitleProfile? left, SubtitleProfile? right)
     {
-        if (!SubtitleContent.SameFormat(leftPath, rightPath))
+        if (left is null || right is null || !string.Equals(left.FormatKey, right.FormatKey, StringComparison.Ordinal))
         {
             return new SimilarityScore(0, 0);
         }
 
-        var left = SubtitleContent.ReadCues(leftPath).ToList();
-        var right = SubtitleContent.ReadCues(rightPath).ToList();
-
-        var content = left.Count >= MinimumCues && right.Count >= MinimumCues
-            ? Compare(Tally(Bigrams(left), Keep), Tally(Bigrams(right), Keep))
+        var content = left.CueCount >= MinimumCues && right.CueCount >= MinimumCues
+            ? Compare(left.Bigrams, right.Bigrams)
             : 0;
 
-        return new SimilarityScore(
-            content,
-            CompareFormatting(
-                SubtitleContent.ReadFormatting(leftPath).ToList(),
-                SubtitleContent.ReadFormatting(rightPath).ToList()));
+        return new SimilarityScore(content, CompareFormatting(left, right));
     }
 
-    // ! Word pairs run across cue boundaries, so one cue re-split into two scores unchanged.
-    //   Single words do not work here: two unrelated subtitles share most of a language.
-    private static IEnumerable<string> Bigrams(List<string> cues)
+    // ! The worse of the two, never a blend. One style definition is outvoted per-cue.
+    private static double CompareFormatting(SubtitleProfile left, SubtitleProfile right)
+        => Math.Min(
+            Compare(left.Declarations, right.Declarations),
+            Compare(left.Usage, right.Usage));
+
+    internal static bool IsDeclaration(string token)
+        => token.StartsWith("style=", StringComparison.Ordinal);
+
+    // ! Pairs run across cue boundaries; a re-split cue has to score the same.
+    internal static IEnumerable<string> Bigrams(List<string> cues)
     {
         var stream = cues
             .SelectMany(cue => NormalizeCue(cue).Split(' ', StringSplitOptions.RemoveEmptyEntries))
@@ -51,25 +88,7 @@ public static class SubtitleSimilarity
         }
     }
 
-    // ! The worse of the two, never a blend. One style definition against a cue token per cue
-    //   is outvoted 180 to 1, and the definition is the part that carries the styling.
-    private static double CompareFormatting(List<string> left, List<string> right)
-    {
-        var declarations = Compare(
-            Tally(left.Where(IsDeclaration), Keep),
-            Tally(right.Where(IsDeclaration), Keep));
-
-        var usage = Compare(
-            Tally(left.Where(t => !IsDeclaration(t)), Keep),
-            Tally(right.Where(t => !IsDeclaration(t)), Keep));
-
-        return Math.Min(declarations, usage);
-    }
-
-    private static bool IsDeclaration(string token)
-        => token.StartsWith("style=", StringComparison.Ordinal);
-
-    // Sørensen-Dice over token multisets. Order-insensitive, and a few extra tokens cost little.
+    // Sørensen-Dice over token multisets.
     public static double Compare(Dictionary<string, int> left, Dictionary<string, int> right)
     {
         var leftTotal = left.Values.Sum();
@@ -98,28 +117,24 @@ public static class SubtitleSimilarity
         return 2.0 * shared / (leftTotal + rightTotal);
     }
 
-    public static Dictionary<string, int> Tally(IEnumerable<string> values, Func<string, string> normalize)
+    internal static Dictionary<string, int> Tally(IEnumerable<string> values)
     {
         var counts = new Dictionary<string, int>(StringComparer.Ordinal);
 
         foreach (var value in values)
         {
-            var key = normalize(value);
-            if (key.Length == 0)
+            if (value.Length == 0)
             {
                 continue;
             }
 
-            counts[key] = counts.TryGetValue(key, out var existing) ? existing + 1 : 1;
+            counts[value] = counts.TryGetValue(value, out var existing) ? existing + 1 : 1;
         }
 
         return counts;
     }
 
-    private static string Keep(string value) => value;
-
-    // ! Keeps letters and digits only. Punctuation and line breaks differ between rips of
-    //   the same subtitle far more often than the words do. Styling is scored separately.
+    // ! Letters and digits only. Punctuation and line breaks are not content here.
     private static string NormalizeCue(string cue)
     {
         var builder = new StringBuilder(cue.Length);

@@ -50,7 +50,7 @@ public class SubtitleDeduplicator
                     continue;
                 }
 
-                var score = SubtitleSimilarity.Compare(keeper.Path, candidate.Path);
+                var score = SubtitleSimilarity.Compare(keeper.Profile, candidate.Profile);
                 if (!score.Matches(Threshold))
                 {
                     continue;
@@ -59,6 +59,11 @@ public class SubtitleDeduplicator
                 if (config.DryRunMode)
                 {
                     wouldRemove++;
+                    MarkStage(
+                        candidate.Record,
+                        StageOutcome.Skipped,
+                        $"Would be removed as a duplicate of {Path.GetFileName(keeper.Path)}.");
+
                     _logger.LogInformation(
                         "Dry run: would remove {Duplicate} ({Content:P0} the same text and {Formatting:P0} the same styling as {Keeper})",
                         candidate.Path,
@@ -87,10 +92,11 @@ public class SubtitleDeduplicator
         public required long Length { get; init; }
 
         public required bool IsPluginFile { get; init; }
+
+        public required SubtitleProfile Profile { get; init; }
     }
 
-    // ! Every member must have synced. An unsynced copy holds the same words at the wrong
-    //   times, and nothing here can tell which of the two is the correct one.
+    // ! Every member must have synced. Nothing here can time-check an unsynced copy.
     private List<List<Candidate>> Group(Guid itemId, IEnumerable<SubtitleTarget> targets)
     {
         var slots = new Dictionary<SubtitleSlot, List<Candidate>>();
@@ -140,7 +146,7 @@ public class SubtitleDeduplicator
         }
 
         var info = new FileInfo(path);
-        if (!info.Exists)
+        if (!info.Exists || SubtitleProfile.Read(path) is not { } profile)
         {
             return null;
         }
@@ -150,7 +156,8 @@ public class SubtitleDeduplicator
             Record = record,
             Path = path,
             Length = info.Length,
-            IsPluginFile = record.Provenance == SubtitleProvenance.Created
+            IsPluginFile = record.Provenance == SubtitleProvenance.Created,
+            Profile = profile
         };
     }
 
@@ -165,10 +172,14 @@ public class SubtitleDeduplicator
     // ! The vault copy gates the removal. No backup, no delete.
     private bool Remove(Candidate candidate, string keeperPath, SimilarityScore score)
     {
-        var backup = _vault.Store(candidate.Record.Id, candidate.Path);
+        var record = candidate.Record;
+
+        // ! Labelled. An unlabelled copy lands on the pre-overwrite original and is dropped.
+        var backup = _vault.Store(record.Id, candidate.Path, "duplicate");
         if (backup is null)
         {
             _logger.LogWarning("Backup failed for {Path}; leaving the duplicate in place", candidate.Path);
+            MarkStage(record, StageOutcome.Failed, "Backup failed; the duplicate was left in place.");
             return false;
         }
 
@@ -179,15 +190,19 @@ public class SubtitleDeduplicator
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             _logger.LogError(ex, "Failed to remove the duplicate {Path}", candidate.Path);
+            MarkStage(record, StageOutcome.Failed, "The duplicate could not be removed.");
             return false;
         }
 
-        var record = candidate.Record;
-        record.BackupPath = backup;
-        record.Provenance = SubtitleProvenance.Superseded;
-        record.Message = $"Removed as a duplicate of {Path.GetFileName(keeperPath)}.";
-        record.UpdatedUtc = DateTime.UtcNow;
-        _store.Upsert(record);
+        // ! Only a user file becomes Superseded. Promoting a Created record makes rollback
+        //   restore plugin output into the library.
+        if (record.Provenance == SubtitleProvenance.Retimed)
+        {
+            record.Provenance = SubtitleProvenance.Superseded;
+        }
+
+        record.BackupPath ??= backup;
+        MarkStage(record, StageOutcome.Succeeded, $"Removed as a duplicate of {Path.GetFileName(keeperPath)}.");
 
         _logger.LogInformation(
             "Removed {Duplicate} ({Content:P0} the same text and {Formatting:P0} the same styling as {Keeper}); it is in the backup vault",
@@ -197,5 +212,22 @@ public class SubtitleDeduplicator
             keeperPath);
 
         return true;
+    }
+
+    // ! A store failure must not abort the sweep that called this.
+    private void MarkStage(SyncRecord record, StageOutcome outcome, string message)
+    {
+        var stage = record.RecordStage(SubtitleStageKind.Deduplicate, outcome);
+        stage.Message = message;
+        record.UpdatedUtc = DateTime.UtcNow;
+
+        try
+        {
+            _store.Upsert(record);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogError(ex, "Failed to record deduplication for {Path}", record.OutputPath);
+        }
     }
 }
