@@ -49,11 +49,11 @@ public class SyncStore : ISyncStore, IDisposable
     private bool _dirty;
     private bool _disposed;
 
-    public SyncStore(IApplicationPaths applicationPaths, ILogger<SyncStore> logger)
+    public SyncStore(PluginPaths paths, ILogger<SyncStore> logger)
     {
         _logger = logger;
 
-        var pluginDataDir = Path.Combine(applicationPaths.PluginConfigurationsPath, "AutoSubSync");
+        var pluginDataDir = paths.Home;
         Directory.CreateDirectory(pluginDataDir);
 
         _dataFilePath = Path.Combine(pluginDataDir, "records.json");

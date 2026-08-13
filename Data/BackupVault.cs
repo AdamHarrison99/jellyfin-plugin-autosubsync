@@ -9,10 +9,10 @@ public class BackupVault
     private readonly string _root;
     private readonly ILogger<BackupVault> _logger;
 
-    public BackupVault(IApplicationPaths applicationPaths, ILogger<BackupVault> logger)
+    public BackupVault(PluginPaths paths, ILogger<BackupVault> logger)
     {
         _logger = logger;
-        _root = Path.Combine(applicationPaths.PluginConfigurationsPath, "AutoSubSync", "backups");
+        _root = Path.Combine(paths.Home, "backups");
     }
 
     public string Root => _root;

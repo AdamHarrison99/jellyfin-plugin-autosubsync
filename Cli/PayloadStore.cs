@@ -13,11 +13,8 @@ public class PayloadStore
     private readonly string _scratch;
     private readonly ILogger<PayloadStore> _logger;
 
-    public PayloadStore(IApplicationPaths applicationPaths, ILogger<PayloadStore> logger)
-        : this(
-            Path.Combine(applicationPaths.PluginConfigurationsPath, "AutoSubSync"),
-            applicationPaths.TempDirectory,
-            logger)
+    public PayloadStore(PluginPaths paths, IApplicationPaths applicationPaths, ILogger<PayloadStore> logger)
+        : this(paths.Home, applicationPaths.TempDirectory, logger)
     {
     }
 
