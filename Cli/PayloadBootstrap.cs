@@ -1,4 +1,5 @@
 using Jellyfin.Plugin.AutoSubSync.Configuration;
+using MediaBrowser.Model.Plugins;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -24,6 +25,11 @@ public class PayloadBootstrap : IHostedService, IDisposable
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
+        if (Plugin.Instance is { } plugin)
+        {
+            plugin.ConfigurationChanged += OnConfigurationChanged;
+        }
+
         // ! Never block startup on a download that runs to hundreds of megabytes.
         _ = Task.Run(RunAsync, _shutdownCts.Token);
         return Task.CompletedTask;
@@ -31,6 +37,11 @@ public class PayloadBootstrap : IHostedService, IDisposable
 
     public Task StopAsync(CancellationToken cancellationToken)
     {
+        if (Plugin.Instance is { } plugin)
+        {
+            plugin.ConfigurationChanged -= OnConfigurationChanged;
+        }
+
         _shutdownCts.Cancel();
         return Task.CompletedTask;
     }
@@ -42,7 +53,7 @@ public class PayloadBootstrap : IHostedService, IDisposable
             await _assy.EnsureReadyAsync(_shutdownCts.Token).ConfigureAwait(false);
 
             // The OCR payload is only worth its download to a server that has OCR turned on.
-            if (NeedsOcr())
+            if (NeedsOcr(Plugin.Instance?.Configuration))
             {
                 await _seConv.EnsureReadyAsync(_shutdownCts.Token).ConfigureAwait(false);
             }
@@ -57,11 +68,36 @@ public class PayloadBootstrap : IHostedService, IDisposable
         }
     }
 
-    private static bool NeedsOcr()
+    // ! Turning the setting on is the trigger. Waiting for the first file that needs it strands
+    //   the admin on "not downloaded yet" with nothing to do about it.
+    private void OnConfigurationChanged(object? sender, BasePluginConfiguration configuration)
     {
-        var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
-        return config.ConvertImageSubtitles || config.RemoveHearingImpairedTags;
+        if (configuration is not PluginConfiguration config || !NeedsOcr(config))
+        {
+            return;
+        }
+
+        _ = Task.Run(FetchSeConvAsync, _shutdownCts.Token);
     }
+
+    private async Task FetchSeConvAsync()
+    {
+        try
+        {
+            await _seConv.EnsureReadyAsync(_shutdownCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Server shutting down.
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Could not install the OCR payload after a settings change");
+        }
+    }
+
+    private static bool NeedsOcr(PluginConfiguration? config)
+        => config is not null && (config.ConvertImageSubtitles || config.RemoveHearingImpairedTags);
 
     public void Dispose()
     {

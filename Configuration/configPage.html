@@ -333,7 +333,7 @@
                         <input is="emby-input" type="text" id="txtLanguages" />
                         <div class="fieldDescription">
                             Comma-separated language codes (<code>eng, spa</code> or <code>en, es</code>).
-                            Two- and three-letter forms both work and can be mixed. Leave empty for
+                            Two- and three-letter forms both work and can be mixed. Always processes subtitles with unknown languages. Leave empty for
                             all languages.
                         </div>
                     </div>
@@ -434,7 +434,7 @@
                     <span>Run full sync now</span>
                 </button>
                 <div class="fieldDescription belowControl">
-                    Starts the "Full Library Sync" scheduled task immediately.
+                    Starts the "Full Library Sync" scheduled task immediately. Takes a moment to get started, so be patient.
                 </div>
 
                 <br />
@@ -486,7 +486,15 @@
                     return Array.prototype.slice.call(boxes).map(function (b) { return b.getAttribute('data-id'); });
                 }
 
+                // ! The two sides come from different APIs and disagree on dashes. Compared raw,
+                //   nothing renders checked and the next save writes an empty selection.
+                function normalizeId(value) {
+                    return String(value).replace(/-/g, '').toLowerCase();
+                }
+
                 function loadLibraries(page, selectedIds) {
+                    var selected = selectedIds.map(normalizeId);
+
                     return ApiClient.getVirtualFolders().then(function (folders) {
                         var list = page.querySelector('#libraryList');
 
@@ -496,7 +504,7 @@
                         }
 
                         list.innerHTML = folders.map(function (f) {
-                            var checked = selectedIds.indexOf(f.ItemId) !== -1 ? ' checked' : '';
+                            var checked = selected.indexOf(normalizeId(f.ItemId)) !== -1 ? ' checked' : '';
                             return '<label class="checkboxContainer">'
                                 + '<input is="emby-checkbox" type="checkbox" class="chkLibrary" data-id="'
                                 + escapeHtml(f.ItemId) + '"' + checked + ' />'
@@ -642,9 +650,13 @@
                     }
                 }
 
+                // ! Save reads the form, so a form that never loaded is a form full of defaults.
+                var configLoaded = false;
+
                 function load(page) {
                     Dashboard.showLoadingMsg();
                     loadStatus(page);
+                    configLoaded = false;
 
                     ApiClient.getPluginConfiguration(pluginUniqueId).then(function (config) {
                         page.querySelector('#chkDryRun').checked = config.DryRunMode;
@@ -671,14 +683,33 @@
 
                         return loadLibraries(page, config.EnabledLibraryIds || []);
                     }).then(function () {
+                        configLoaded = true;
+                        setSaveEnabled(page, true);
                         Dashboard.hideLoadingMsg();
                     }, function () {
+                        setSaveEnabled(page, false);
                         Dashboard.hideLoadingMsg();
-                        Dashboard.alert('Failed to load plugin configuration. Check the server log.');
+                        Dashboard.alert('Failed to load the current settings, so saving is disabled to avoid '
+                            + 'overwriting them with defaults. Reload the page once the server is back up.');
                     });
                 }
 
+                function setSaveEnabled(page, enabled) {
+                    var button = page.querySelector('.button-submit');
+                    if (button) {
+                        button.disabled = !enabled;
+                    }
+                }
+
                 function save(page) {
+                    // ! Every field below is read from the DOM. Writing an unpopulated form
+                    //   replaces the stored settings with whatever the markup defaults to.
+                    if (!configLoaded) {
+                        Dashboard.alert('The current settings never loaded, so there is nothing safe to save. '
+                            + 'Reload the page.');
+                        return;
+                    }
+
                     Dashboard.showLoadingMsg();
 
                     ApiClient.getPluginConfiguration(pluginUniqueId).then(function (config) {

@@ -14,6 +14,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
 {
     public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
     {
+        serviceCollection.AddSingleton<PluginPaths>();
         serviceCollection.AddSingleton<ISyncStore, SyncStore>();
         serviceCollection.AddSingleton<BackupVault>();
 
