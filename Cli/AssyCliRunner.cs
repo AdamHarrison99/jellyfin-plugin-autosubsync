@@ -19,15 +19,18 @@ public class AssyCliRunner : IAssyCliRunner
     };
 
     private readonly AssyRuntime _runtime;
+    private readonly AssyConfigFile _configFile;
     private readonly IMediaEncoder _mediaEncoder;
     private readonly ILogger<AssyCliRunner> _logger;
 
     public AssyCliRunner(
         AssyRuntime runtime,
+        AssyConfigFile configFile,
         IMediaEncoder mediaEncoder,
         ILogger<AssyCliRunner> logger)
     {
         _runtime = runtime;
+        _configFile = configFile;
         _mediaEncoder = mediaEncoder;
         _logger = logger;
     }
@@ -36,7 +39,6 @@ public class AssyCliRunner : IAssyCliRunner
         string videoPath,
         string subtitlePath,
         string outputPath,
-        string tool,
         CancellationToken cancellationToken)
     {
         var config = GetConfiguration();
@@ -46,7 +48,13 @@ public class AssyCliRunner : IAssyCliRunner
             return Task.FromResult(UnavailableResult(_runtime.GetStatus()));
         }
 
-        var invocation = AssyArgumentBuilder.BuildSync(config, exe, videoPath, subtitlePath, outputPath, tool);
+        if (_configFile.Ensure() is not { } configPath)
+        {
+            return Task.FromResult(ConfigUnavailableResult());
+        }
+
+        var invocation = AssyArgumentBuilder.BuildSync(
+            config, exe, configPath, videoPath, subtitlePath, outputPath);
         return RunAsync(invocation, config, expectJson: true, cancellationToken);
     }
 
@@ -63,7 +71,13 @@ public class AssyCliRunner : IAssyCliRunner
             return Task.FromResult(UnavailableResult(_runtime.GetStatus()));
         }
 
-        var invocation = AssyArgumentBuilder.BuildShift(config, exe, subtitlePath, milliseconds, outputPath);
+        if (_configFile.Ensure() is not { } configPath)
+        {
+            return Task.FromResult(ConfigUnavailableResult());
+        }
+
+        var invocation = AssyArgumentBuilder.BuildShift(
+            exe, configPath, subtitlePath, milliseconds, outputPath);
         return RunAsync(invocation, config, expectJson: true, cancellationToken);
     }
 
@@ -74,6 +88,14 @@ public class AssyCliRunner : IAssyCliRunner
     {
         ExitCode = 2,
         StandardError = status.Message
+    };
+
+    // ! Never spawn without it. assy-cli treats a missing --config-file path as an empty config
+    //   and runs on upstream defaults, which is the behaviour the file exists to prevent.
+    private static AssyInvocationResult ConfigUnavailableResult() => new()
+    {
+        ExitCode = 2,
+        StandardError = "The assy-cli configuration file could not be written."
     };
 
     private async Task<AssyInvocationResult> RunAsync(
@@ -158,7 +180,14 @@ public class AssyCliRunner : IAssyCliRunner
             // Let the async readers drain what was already buffered.
             await Task.Delay(200, CancellationToken.None).ConfigureAwait(false);
 
-            result.ExitCode = result.TimedOut ? 1 : 130;
+            // ! Only a timeout is an engine failure. Rethrowing an external cancel is what stops
+            //   the task from taking the next target.
+            if (!result.TimedOut)
+            {
+                throw;
+            }
+
+            result.ExitCode = 1;
             result.StandardError = Tail(stderr.ToString());
             return result;
         }

@@ -14,8 +14,7 @@ public static class SubtitleContent
     {
         Unknown,
         Advanced,
-        Block,
-        MicroDvd
+        Block
     }
 
     // ! Unknown formats return true. Never assert emptiness blind.
@@ -63,7 +62,6 @@ public static class SubtitleContent
         {
             SubtitleFormat.Advanced => ReadAdvancedFormatting(path),
             SubtitleFormat.Block => ReadBlockFormatting(path),
-            SubtitleFormat.MicroDvd => ReadMicroDvdFormatting(path),
             _ => Enumerable.Empty<string>()
         };
 
@@ -73,7 +71,6 @@ public static class SubtitleContent
         {
             SubtitleFormat.Advanced => ReadAdvancedCues(path),
             SubtitleFormat.Block => ReadBlockCues(path),
-            SubtitleFormat.MicroDvd => ReadMicroDvdCues(path),
             _ => Enumerable.Empty<string>()
         };
 
@@ -81,7 +78,6 @@ public static class SubtitleContent
     {
         ".ass" or ".ssa" => SubtitleFormat.Advanced,
         ".srt" or ".vtt" => SubtitleFormat.Block,
-        ".sub" => SubtitleFormat.MicroDvd,
         _ => SubtitleFormat.Unknown
     };
 
@@ -89,7 +85,6 @@ public static class SubtitleContent
     {
         SubtitleFormat.Advanced => line.StartsWith("Dialogue:", StringComparison.OrdinalIgnoreCase),
         SubtitleFormat.Block => line.Contains("-->", StringComparison.Ordinal),
-        SubtitleFormat.MicroDvd => SplitMicroDvd(line) is not null,
         _ => false
     };
 
@@ -171,46 +166,10 @@ public static class SubtitleContent
         }
     }
 
-    private static IEnumerable<string> ReadMicroDvdCues(string path)
-    {
-        foreach (var line in ReadLinesSafe(path))
-        {
-            if (SplitMicroDvd(line) is string text && text.Trim().Length > 0)
-            {
-                yield return text.Replace('|', '\n');
-            }
-        }
-    }
-
     private static bool IsVttBlockHeader(string line)
         => VttBlockHeaders.Any(h =>
             line.StartsWith(h, StringComparison.Ordinal)
             && (line.Length == h.Length || !char.IsLetter(line[h.Length])));
-
-    // Null when the line is not {start}{end}text.
-    private static string? SplitMicroDvd(string line)
-    {
-        var trimmed = line.TrimStart();
-        if (trimmed.Length == 0 || trimmed[0] != '{')
-        {
-            return null;
-        }
-
-        var first = trimmed.IndexOf('}', StringComparison.Ordinal);
-        if (first < 2 || !trimmed[1..first].All(char.IsAsciiDigit))
-        {
-            return null;
-        }
-
-        var rest = trimmed[(first + 1)..];
-        if (rest.Length == 0 || rest[0] != '{')
-        {
-            return null;
-        }
-
-        var second = rest.IndexOf('}', StringComparison.Ordinal);
-        return second < 0 ? null : rest[(second + 1)..];
-    }
 
     // Drops {\an8}-style override blocks.
     private static string StripOverrides(string text)
@@ -310,22 +269,6 @@ public static class SubtitleContent
             }
 
             foreach (var block in Blocks(line, '{', '}'))
-            {
-                yield return "override=" + block;
-            }
-        }
-    }
-
-    private static IEnumerable<string> ReadMicroDvdFormatting(string path)
-    {
-        foreach (var line in ReadLinesSafe(path))
-        {
-            if (SplitMicroDvd(line) is not string text)
-            {
-                continue;
-            }
-
-            foreach (var block in Blocks(text, '{', '}'))
             {
                 yield return "override=" + block;
             }

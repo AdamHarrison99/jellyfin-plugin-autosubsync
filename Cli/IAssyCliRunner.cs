@@ -25,7 +25,6 @@ public interface IAssyCliRunner
         string videoPath,
         string subtitlePath,
         string outputPath,
-        string tool,
         CancellationToken cancellationToken);
 
     Task<AssyInvocationResult> ShiftAsync(

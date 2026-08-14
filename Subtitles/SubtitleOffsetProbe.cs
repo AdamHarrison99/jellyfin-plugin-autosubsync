@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 
 namespace Jellyfin.Plugin.AutoSubSync.Subtitles;
 
-// Reads the first cue timestamp. Approximate.
+// Reads the first and last cue timestamps. Approximate.
 public static partial class SubtitleOffsetProbe
 {
     private const int MaxLinesScanned = 200;
@@ -36,6 +36,30 @@ public static partial class SubtitleOffsetProbe
         }
 
         return null;
+    }
+
+    // ! No line cap here; the last cue is only findable by reading to the end.
+    public static long? TryGetLastCueMs(string path)
+    {
+        try
+        {
+            long? last = null;
+
+            foreach (var line in File.ReadLines(path))
+            {
+                var match = TimestampRegex().Match(line);
+                if (match.Success)
+                {
+                    last = ParseGroups(match);
+                }
+            }
+
+            return last;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
     }
 
     private static long ParseGroups(Match match)

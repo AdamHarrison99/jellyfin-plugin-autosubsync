@@ -84,18 +84,13 @@ what it would have done.
 | Remove duplicate external subtitles | Off | Once everything for an item has synced, subtitle **files** of the same language and flags that hold at least 85% the same text **and** the same styling are collapsed to one. Only external files are ever removed; a track inside the video is never touched. Every removed file is copied to the backup vault first and comes back with **Roll back everything**. Different formats are never merged — a `.srt` and an `.ass` are left alone, as are two `.ass` files whose styles differ. |
 | Languages | *all* | Comma-separated language codes, e.g. `eng, spa` or `en, es`. Two- and three-letter forms both work and can be mixed, as can the `ger`/`deu` style variants containers disagree about. Empty processes every language. Unlabelled and unrecognized tracks are always processed. |
 
-### Engines
-
-| Setting | Default | What it does |
-| --- | --- | --- |
-| Engine fallback chain | `ffsubsync, alass, autosubsync` | Which alignment engines to try, in order. They differ in the formats they read, and one that cannot read a subtitle is skipped rather than failed. Each engine that reads the format is tried once; a subtitle none of them can align is left alone until it or its video changes. |
-
 ### Output
 
 | Setting | Default | What it does |
 | --- | --- | --- |
 | Where to write synced external subtitles | Overwrite the original | Overwrite replaces the file in place, keeping its name, and always backs the original up first. Side-by-side leaves the original alone and writes a new marked file. Embedded tracks always become new files regardless. |
-| Minimum offset (ms) | `50` | Discard a result that moves the subtitle less than this. Stops the plugin rewriting subtitles that were already correct. Below roughly 50 ms a shift is imperceptible; above it, people notice. |
+| Minimum offset (ms) | `150` | Discard a result that moves the subtitle less than this. Stops the plugin rewriting subtitles that were already correct. Below roughly 150 ms a shift is imperceptible; above it, people notice. |
+| Maximum offset (ms) | `120000` | Reject a result that moves the subtitle more than this, and leave the original in place. A shift of several minutes usually means the sync latched onto the wrong audio. Set to 0 to accept any shift. |
 
 ### Throttling
 
@@ -125,9 +120,8 @@ find them. However, they will remain on disk and can be manually restored as a l
 ## Credits
 
 Subtitle alignment is done entirely by [AutoSubSync](https://github.com/denizsafak/AutoSubSync) by
-Deniz Şafak, which wraps [ffsubsync](https://github.com/smacke/ffsubsync),
-[alass](https://github.com/kaegi/alass), and
-[autosubsync](https://github.com/oseiskar/autosubsync).
+Deniz Şafak, and by the engine it wraps that this plugin uses,
+[ffsubsync](https://github.com/smacke/ffsubsync) by Stephen Macke.
 
 Reading image-based subtitles and removing hearing-impaired text are done by
 [Subtitle Edit](https://github.com/SubtitleEdit/subtitleedit) by Nikolaj Olsson, via its headless

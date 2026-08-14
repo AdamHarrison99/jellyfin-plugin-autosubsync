@@ -46,6 +46,9 @@ public class SyncRecord
 
     public int AttemptCount { get; set; }
 
+    // ! Set only when MaximumOffsetMs rejected a result. Raising that limit retries the record.
+    public long? RejectedOffsetMs { get; set; }
+
     // Both fingerprints must still match for a target to be skipped.
     public long SourceLength { get; set; }
 

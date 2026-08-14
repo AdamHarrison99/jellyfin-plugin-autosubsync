@@ -339,22 +339,6 @@
                     </div>
 
                     <br />
-                    <h2>Engines</h2>
-
-                    <div class="inputContainer">
-                        <label class="inputLabel" for="txtToolChain">Engine fallback chain</label>
-                        <input is="emby-input" type="text" id="txtToolChain" />
-                        <div class="fieldDescription">
-                            Comma-separated, tried in order: <code>ffsubsync</code>, <code>alass</code>,
-                            <code>autosubsync</code>. Every subtitle is aligned against the video's own
-                            audio. Each engine that reads the format is tried once, and one that cannot
-                            read it is skipped rather than failed &mdash; <code>autosubsync</code> reads
-                            only SRT. A subtitle none of them can align is left alone until it or its
-                            video changes.
-                        </div>
-                    </div>
-
-                    <br />
                     <h2>Output</h2>
 
                     <div class="selectContainer">
@@ -377,8 +361,18 @@
                         <input is="emby-input" type="number" id="txtMinimumOffset" min="0" />
                         <div class="fieldDescription">
                             Discard a result that moves the subtitle less than this. Prevents writing
-                            files for subtitles that were already correct. Below roughly 50 ms a
-                            shift is imperceptible; above it, people notice.
+                            files for subtitles that were already correct.
+                        </div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="txtMaximumOffset">Maximum offset (ms)</label>
+                        <input is="emby-input" type="number" id="txtMaximumOffset" min="0" />
+                        <div class="fieldDescription">
+                            Reject a result that moves the subtitle more than this. A shift of
+                            several minutes usually means the sync latched onto the wrong audio, and
+                            writing it would replace a good subtitle with a worse one. Set to 0 to
+                            accept any shift.
                         </div>
                     </div>
 
@@ -671,10 +665,9 @@
                         page.querySelector('#chkDeduplicate').checked = config.DeduplicateSubtitles;
                         page.querySelector('#txtLanguages').value = (config.LanguageAllowList || []).join(', ');
 
-                        page.querySelector('#txtToolChain').value = (config.SyncToolChain || []).join(', ');
-
                         page.querySelector('#selWriteMode').value = config.ExternalWriteMode;
                         page.querySelector('#txtMinimumOffset').value = config.MinimumOffsetMs;
+                        page.querySelector('#txtMaximumOffset').value = config.MaximumOffsetMs;
 
                         page.querySelector('#txtConcurrency').value = config.MaxConcurrentSyncs;
 
@@ -724,9 +717,8 @@
                         config.DeduplicateSubtitles = page.querySelector('#chkDeduplicate').checked;
                         config.LanguageAllowList = splitList(page.querySelector('#txtLanguages').value);
 
-                        config.SyncToolChain = splitList(page.querySelector('#txtToolChain').value);
-
-                        config.MinimumOffsetMs = readInt(page, '#txtMinimumOffset', 50, 0, 600000);
+                        config.MinimumOffsetMs = readInt(page, '#txtMinimumOffset', 150, 0, 600000);
+                        config.MaximumOffsetMs = readInt(page, '#txtMaximumOffset', 120000, 0, 3600000);
                         config.MaxConcurrentSyncs = readInt(page, '#txtConcurrency', 0, 0, 8);
 
                         config.AutoSyncOnItemAdded = page.querySelector('#chkAutoOnAdd').checked;

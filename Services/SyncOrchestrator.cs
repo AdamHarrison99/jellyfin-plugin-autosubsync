@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Jellyfin.Plugin.AutoSubSync.Cli;
 using Jellyfin.Plugin.AutoSubSync.Configuration;
 using Jellyfin.Plugin.AutoSubSync.Data;
@@ -69,7 +70,7 @@ public class SyncOrchestrator
             if (IsExhausted(record, target, config))
             {
                 _logger.LogDebug(
-                    "{Item} ({Key}) failed every engine and is unchanged since",
+                    "{Item} ({Key}) failed and is unchanged since",
                     target.ItemName,
                     target.Key);
                 return record;
@@ -105,15 +106,18 @@ public class SyncOrchestrator
         }
         catch (OperationCanceledException)
         {
+            // ! Record it, then let it propagate. Swallowing it here leaves the caller's loop
+            //   running and every remaining target starts an engine only to be killed again.
             record.Status = SyncStatus.Pending;
             record.Message = "Cancelled.";
             SafeUpsert(record);
-            return record;
+            throw;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unhandled error syncing {Item} ({Key})", target.ItemName, target.Key);
             record.Status = SyncStatus.Failed;
+            record.RejectedOffsetMs = null;
             record.Message = ex.Message;
             SafeUpsert(record);
             return record;
@@ -213,17 +217,16 @@ public class SyncOrchestrator
             CaptureFingerprint(record, target, target.SubtitlePath ?? inputPath);
 
             var extension = Path.GetExtension(inputPath);
-            var chain = SyncToolCapabilities.SelectChain(config.SyncToolChain, extension);
 
-            if (chain.Count == 0)
+            if (!SyncEngine.Supports(extension))
             {
                 record.Status = SyncStatus.Unsupported;
-                record.Message = $"No configured engine reads {extension} subtitles.";
+                record.Message = $"The sync engine does not read {extension} subtitles.";
                 SafeUpsert(record);
                 return record;
             }
 
-            var attempt = await RunChainAsync(target, record, chain, inputPath, cancellationToken)
+            var attempt = await RunEngineAsync(target, record, inputPath, cancellationToken)
                 .ConfigureAwait(false);
 
             if (attempt.ProducedPath is null)
@@ -231,7 +234,19 @@ public class SyncOrchestrator
                 return Fail(record, attempt.Message);
             }
 
-            if (IsBelowMinimumOffset(inputPath, attempt.ProducedPath, config))
+            var bounded = config.MaximumOffsetMs > 0 || config.MinimumOffsetMs > 0;
+            var shift = bounded ? MeasureShift(inputPath, attempt.ProducedPath) : null;
+
+            if (config.MaximumOffsetMs > 0 && shift > config.MaximumOffsetMs)
+            {
+                TryDelete(attempt.ProducedPath);
+                return Fail(
+                    record,
+                    $"The engine moved the subtitle by {shift}ms, past the {config.MaximumOffsetMs}ms limit.",
+                    shift);
+            }
+
+            if (config.MinimumOffsetMs > 0 && shift < config.MinimumOffsetMs)
             {
                 TryDelete(attempt.ProducedPath);
                 record.Status = SyncStatus.Skipped;
@@ -404,68 +419,78 @@ public class SyncOrchestrator
         return path;
     }
 
-    private record ChainAttempt(string? ProducedPath, string? Message);
+    private record EngineAttempt(string? ProducedPath, string? Message);
 
-    private async Task<ChainAttempt> RunChainAsync(
+    private async Task<EngineAttempt> RunEngineAsync(
         SubtitleTarget target,
         SyncRecord record,
-        IReadOnlyList<string> chain,
         string inputPath,
         CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var scratchDir = ScratchDirectory();
-        string? lastMessage = null;
+        var scratchOutput = Path.Combine(
+            scratchDir,
+            Guid.NewGuid().ToString("N") + Path.GetExtension(inputPath));
 
-        foreach (var tool in chain)
+        AssyInvocationResult invocation;
+        var stopwatch = Stopwatch.StartNew();
+
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            invocation = await _runner
+                .SyncAsync(target.VideoPath, inputPath, scratchOutput, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            TryDelete(scratchOutput);
+            throw;
+        }
 
-            var scratchOutput = Path.Combine(
-                scratchDir,
-                Guid.NewGuid().ToString("N") + Path.GetExtension(inputPath));
+        stopwatch.Stop();
 
-            AssyInvocationResult invocation;
+        record.AttemptCount++;
+        record.ToolUsed = invocation.Result?.Tool ?? SyncEngine.Name;
+        record.ReferenceUsed = target.VideoPath;
+        // ! Fall back to the wall clock: a timed-out attempt reports no elapsed time, and
+        //   zero would hide the most expensive attempts from the stage averages.
+        record.ElapsedMs = invocation.Result?.ElapsedMs ?? stopwatch.ElapsedMilliseconds;
+        record.ReturnCode = invocation.ExitCode;
 
-            try
+        if (invocation.Succeeded && invocation.Result?.Ok == true)
+        {
+            // ! Only trust a path we handed the engine.
+            var produced = IsWithin(scratchDir, invocation.Result.Output) ? invocation.Result.Output! : scratchOutput;
+            if (File.Exists(produced))
             {
-                invocation = await _runner
-                    .SyncAsync(target.VideoPath, inputPath, scratchOutput, tool, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                TryDelete(scratchOutput);
-                throw;
-            }
-
-            record.AttemptCount++;
-            record.ToolUsed = invocation.Result?.Tool ?? tool;
-            record.ReferenceUsed = target.VideoPath;
-            record.ElapsedMs = invocation.Result?.ElapsedMs ?? 0;
-            record.ReturnCode = invocation.ExitCode;
-
-            if (invocation.Succeeded && invocation.Result?.Ok == true)
-            {
-                // ! Only trust a path we handed the engine.
-                var produced = IsWithin(scratchDir, invocation.Result.Output) ? invocation.Result.Output! : scratchOutput;
-                if (File.Exists(produced))
-                {
-                    return new ChainAttempt(produced, null);
-                }
-
-                lastMessage = "The engine reported success but wrote no file.";
-            }
-            else
-            {
-                var message = invocation.Result?.Message;
-                lastMessage = string.IsNullOrWhiteSpace(message) ? invocation.StandardError : message;
+                return new EngineAttempt(produced, null);
             }
 
             TryDelete(scratchOutput);
-            _logger.LogDebug("{Tool} failed for {Item}: {Message}", tool, target.ItemName, lastMessage);
+            return new EngineAttempt(null, "The engine reported success but wrote no file.");
         }
 
-        return new ChainAttempt(null, lastMessage);
+        var message = invocation.Result?.Message;
+        var reason = string.IsNullOrWhiteSpace(message) ? invocation.StandardError : message;
+
+        TryDelete(scratchOutput);
+
+        if (invocation.TimedOut)
+        {
+            _logger.LogWarning(
+                "The sync engine timed out after {Elapsed:n0}s on {Item}: {Message}",
+                stopwatch.Elapsed.TotalSeconds,
+                target.ItemName,
+                reason);
+        }
+        else
+        {
+            _logger.LogDebug("The sync engine failed for {Item}: {Message}", target.ItemName, reason);
+        }
+
+        return new EngineAttempt(null, reason);
     }
 
     private static bool IsWithin(string directory, string? path)
@@ -549,10 +574,16 @@ public class SyncOrchestrator
         => (record.Status == SyncStatus.Synced || record.Status == SyncStatus.Skipped)
            && FingerprintMatches(record, target, subtitlePath);
 
-    // ! Every capable engine ran already. Identical inputs fail identically; only a change retries.
+    // ! The engine ran already. Identical inputs fail identically; only a change retries.
     internal static bool IsExhausted(SyncRecord record, SubtitleTarget target, PluginConfiguration config)
         => record.Status == SyncStatus.Failed
+           && !LimitWouldNowAccept(record, config)
            && FingerprintMatches(record, target, target.SubtitlePath);
+
+    // ! A rejection the limit caused is not an engine failure. Raising the limit has to retry it.
+    private static bool LimitWouldNowAccept(SyncRecord record, PluginConfiguration config)
+        => record.RejectedOffsetMs is { } rejected
+           && (config.MaximumOffsetMs <= 0 || rejected <= config.MaximumOffsetMs);
 
     private static bool FingerprintMatches(SyncRecord record, SubtitleTarget target, string? subtitlePath)
     {
@@ -573,24 +604,28 @@ public class SyncOrchestrator
                && record.SourceSha256 == FileFingerprint.TryComputeFull(subtitlePath);
     }
 
-    private static bool IsBelowMinimumOffset(string inputPath, string outputPath, PluginConfiguration config)
+    // Null on unparseable timings, which leaves both bounds untested and keeps the result.
+    // ! Both ends: a rate correction can move the last cue by minutes and the first by nothing.
+    private static long? MeasureShift(string inputPath, string outputPath)
     {
-        if (config.MinimumOffsetMs <= 0)
+        var atStart = Delta(
+            SubtitleOffsetProbe.TryGetFirstCueMs(inputPath),
+            SubtitleOffsetProbe.TryGetFirstCueMs(outputPath));
+
+        var atEnd = Delta(
+            SubtitleOffsetProbe.TryGetLastCueMs(inputPath),
+            SubtitleOffsetProbe.TryGetLastCueMs(outputPath));
+
+        if (atStart is null)
         {
-            return false;
+            return atEnd;
         }
 
-        var before = SubtitleOffsetProbe.TryGetFirstCueMs(inputPath);
-        var after = SubtitleOffsetProbe.TryGetFirstCueMs(outputPath);
-
-        // Unparseable timings: keep the result.
-        if (before is null || after is null)
-        {
-            return false;
-        }
-
-        return Math.Abs(after.Value - before.Value) < config.MinimumOffsetMs;
+        return atEnd is null ? atStart : Math.Max(atStart.Value, atEnd.Value);
     }
+
+    private static long? Delta(long? before, long? after)
+        => before is null || after is null ? null : Math.Abs(after.Value - before.Value);
 
     private void QueueRefresh(Guid itemId)
     {
@@ -606,9 +641,10 @@ public class SyncOrchestrator
             RefreshPriority.Low);
     }
 
-    private SyncRecord Fail(SyncRecord record, string? message)
+    private SyncRecord Fail(SyncRecord record, string? message, long? rejectedOffsetMs = null)
     {
         record.Status = SyncStatus.Failed;
+        record.RejectedOffsetMs = rejectedOffsetMs;
         record.Message = string.IsNullOrWhiteSpace(message) ? "Sync failed." : message;
         _logger.LogWarning("Sync failed for {Item}: {Message}", record.ItemName, record.Message);
         SafeUpsert(record);
@@ -619,6 +655,7 @@ public class SyncOrchestrator
     private string? FailStage(SyncRecord record, string? message, SubtitleStageKind kind)
     {
         record.Status = SyncStatus.Failed;
+        record.RejectedOffsetMs = null;
         record.Message = string.IsNullOrWhiteSpace(message) ? "The OCR step failed." : message;
         _logger.LogWarning("{Kind} failed for {Item}: {Message}", kind, record.ItemName, record.Message);
         SafeUpsert(record, kind);

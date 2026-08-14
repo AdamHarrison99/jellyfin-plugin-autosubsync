@@ -76,20 +76,31 @@ public class FullLibrarySyncTask : IScheduledTask
         var items = _scopeResolver.GetItemsInScope(config);
         _logger.LogInformation("AutoSubSync full scan starting over {Count} items", items.Count);
 
-        for (var i = 0; i < items.Count; i++)
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var targets = _discovery.Discover(items[i], config);
-
-            foreach (var target in targets)
+            for (var i = 0; i < items.Count; i++)
             {
-                await _orchestrator.ProcessAsync(target, config, cancellationToken).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var targets = _discovery.Discover(items[i], config);
+
+                foreach (var target in targets)
+                {
+                    await _orchestrator.ProcessAsync(target, config, cancellationToken).ConfigureAwait(false);
+                }
+
+                _deduplicator.ProcessItem(items[i].Id, targets, config);
+
+                progress.Report((double)(i + 1) / items.Count * 100);
             }
-
-            _deduplicator.ProcessItem(items[i].Id, targets, config);
-
-            progress.Report((double)(i + 1) / items.Count * 100);
+        }
+        catch (OperationCanceledException)
+        {
+            // ! Flush before rethrowing; everything synced so far is already on disk and the
+            //   records are the only thing that stops the next run from redoing it.
+            _store.Flush();
+            _logger.LogInformation("AutoSubSync full scan cancelled");
+            throw;
         }
 
         Prune();

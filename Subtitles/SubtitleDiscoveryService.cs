@@ -13,7 +13,7 @@ public class SubtitleDiscoveryService
 {
     private static readonly HashSet<string> SupportedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
-        ".srt", ".ass", ".ssa", ".vtt", ".sub"
+        ".srt", ".ass", ".ssa", ".vtt"
     };
 
     private readonly IMediaSourceManager _mediaSourceManager;
@@ -202,7 +202,7 @@ public class SubtitleDiscoveryService
         }
         else if (!SupportedExtensions.Contains(extension))
         {
-            target.UnsupportedReason = $"No sync engine reads {extension} subtitles.";
+            target.UnsupportedReason = $"The sync engine does not read {extension} subtitles.";
         }
         else if (!SubtitleContent.HasCues(stream.Path))
         {

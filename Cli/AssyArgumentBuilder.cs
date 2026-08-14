@@ -10,21 +10,23 @@ public static class AssyArgumentBuilder
     public static Invocation BuildSync(
         PluginConfiguration config,
         string executablePath,
+        string configFilePath,
         string videoPath,
         string subtitlePath,
-        string outputPath,
-        string tool)
+        string outputPath)
     {
         var args = new List<string>();
-        AppendGlobalOptions(config, args);
+        AppendGlobalOptions(configFilePath, args);
 
         args.Add("sync");
         args.Add(videoPath);
         args.Add(subtitlePath);
         args.Add("-o");
         args.Add(outputPath);
+
+        // ! Always named. An unnamed engine lets assy-cli pick one of the other two.
         args.Add("-t");
-        args.Add(tool);
+        args.Add(SyncEngine.Name);
         args.Add("--json");
 
         if (!string.IsNullOrWhiteSpace(config.OutputEncoding))
@@ -40,14 +42,14 @@ public static class AssyArgumentBuilder
     }
 
     public static Invocation BuildShift(
-        PluginConfiguration config,
         string executablePath,
+        string configFilePath,
         string subtitlePath,
         int milliseconds,
         string outputPath)
     {
         var args = new List<string>();
-        AppendGlobalOptions(config, args);
+        AppendGlobalOptions(configFilePath, args);
 
         args.Add("shift");
         args.Add(subtitlePath);
@@ -59,15 +61,14 @@ public static class AssyArgumentBuilder
         return new Invocation(executablePath, args);
     }
 
-    private static void AppendGlobalOptions(PluginConfiguration config, List<string> args)
+    private static void AppendGlobalOptions(string configFilePath, List<string> args)
     {
         // ! Keep --no-color: stderr is parsed.
         args.Add("--no-color");
 
-        if (!string.IsNullOrWhiteSpace(config.AssyConfigFilePath))
-        {
-            args.Add("--config-file");
-            args.Add(config.AssyConfigFilePath);
-        }
+        // ! Always passed. Omitting it makes assy-cli read the desktop app's own config from the
+        //   user config directory, so engine behaviour would depend on state the plugin cannot see.
+        args.Add("--config-file");
+        args.Add(configFilePath);
     }
 }

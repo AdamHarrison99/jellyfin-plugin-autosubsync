@@ -21,6 +21,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<PayloadStore>();
         serviceCollection.AddSingleton<PayloadFetcher>();
         serviceCollection.AddSingleton<AssyRuntime>();
+        serviceCollection.AddSingleton<AssyConfigFile>();
         serviceCollection.AddSingleton<IAssyCliRunner, AssyCliRunner>();
 
         serviceCollection.AddSingleton<SeConvRuntime>();

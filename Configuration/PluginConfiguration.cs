@@ -18,19 +18,6 @@ public class PluginConfiguration : BasePluginConfiguration
 
     public bool DryRunMode { get; set; } = true;
 
-    // ---- assy-cli execution ----
-
-    // The binary is pinned to one build; there is no path to configure.
-    public string AssyConfigFilePath { get; set; } = string.Empty;
-
-    // ---- Engines ----
-
-    public static readonly string[] KnownTools = ["ffsubsync", "alass", "autosubsync"];
-
-    // ! Arrays, not List. Jellyfin stores config as XML, and XmlSerializer appends to a
-    //   collection property it finds already populated.
-    public string[] SyncToolChain { get; set; } = ["ffsubsync", "alass", "autosubsync"];
-
     // ---- Scope ----
 
     // ! Empty means no library is processed. Opt in, never opt out.
@@ -64,7 +51,12 @@ public class PluginConfiguration : BasePluginConfiguration
     // ! Changing this orphans output written under the old marker.
     public string MarkerSuffix { get; set; } = "autosubsync";
 
-    public int MinimumOffsetMs { get; set; } = 50;
+    // ! 150ms is roughly the threshold of perception, and ffsubsync's own residual on a correctly
+    //   timed subtitle sits under it. Lower values rewrite files nobody could tell had changed.
+    public int MinimumOffsetMs { get; set; } = 150;
+
+    // ! A result past this is discarded, not written. 0 accepts any shift.
+    public int MaximumOffsetMs { get; set; } = 120_000;
 
     // ---- Throttling ----
 
@@ -104,25 +96,20 @@ public class PluginConfiguration : BasePluginConfiguration
         MaxConcurrentSyncs = Math.Clamp(MaxConcurrentSyncs, AutoConcurrency, 8);
         PerSyncTimeoutMinutes = Math.Clamp(PerSyncTimeoutMinutes, 1, 240);
         MinimumOffsetMs = Math.Clamp(MinimumOffsetMs, 0, 600_000);
+        MaximumOffsetMs = Math.Clamp(MaximumOffsetMs, 0, 3_600_000);
+
+        // ! An inverted pair leaves no window, and every result is silently rejected or skipped.
+        if (MaximumOffsetMs > 0 && MinimumOffsetMs > MaximumOffsetMs)
+        {
+            MinimumOffsetMs = MaximumOffsetMs;
+        }
 
         // ! Must never be empty.
         MarkerSuffix = SanitizeMarker(MarkerSuffix);
 
-        // ! The API accepts a null for any of these; every use below assumes it is not.
-        SyncToolChain ??= [];
+        // ! The API accepts a null for either of these; every use below assumes it is not.
         LanguageAllowList ??= [];
         EnabledLibraryIds ??= [];
-
-        SyncToolChain = SyncToolChain
-            .Where(t => KnownTools.Contains(t, StringComparer.OrdinalIgnoreCase))
-            .Select(t => t.ToLowerInvariant())
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-
-        if (SyncToolChain.Length == 0)
-        {
-            SyncToolChain = ["ffsubsync", "alass", "autosubsync"];
-        }
 
         if (string.IsNullOrWhiteSpace(OutputEncoding))
         {
