@@ -1,6 +1,6 @@
 name: "AutoSubSync"
 guid: "6dbc32c5-1c68-481e-b066-9521552a2615"
-version: "1.1.2.0"
+version: "1.2.0.0"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 overview: "Automatically synchronizes external and embedded subtitles across your library."
@@ -17,7 +17,8 @@ owner: "AdamHarrison99"
 artifacts:
   - "Jellyfin.Plugin.AutoSubSync.dll"
 changelog: |
-  - Fixed the plugin storing its data inside the Jellyfin plugin folder, which made Jellyfin
-    delete every installed plugin's settings on restart
-  - Existing plugin data is moved to the new location on first start
-  - The settings page no longer saves when it failed to load your current settings
+  - Subtitles are now aligned by ffsubsync alone; the engine fallback chain and its setting are gone
+  - New "Maximum offset" setting rejects a result that moves a subtitle further than you allow
+  - Minimum offset now defaults to 150 ms
+  - Hearing-impaired tracks are detected by their content, not only by their flag
+  - MicroDVD .sub files are now reported as unsupported instead of being aligned

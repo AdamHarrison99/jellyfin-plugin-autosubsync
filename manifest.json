@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.2.0.0",
+        "changelog": "Subtitles are now aligned by ffsubsync alone; the engine fallback chain and its setting are gone. Adds a Maximum offset setting that rejects a result moving a subtitle further than you allow, raises the Minimum offset default to 150 ms, detects hearing-impaired tracks by their content rather than only their flag, and reports MicroDVD .sub files as unsupported.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-autosubsync/releases/download/v1.2.0.0/autosubsync-v1.2.0.0.zip",
+        "checksum": "440f2f234e1ed99c7000a21042061827",
+        "timestamp": "2026-08-14T20:02:38Z"
+      },
+      {
         "version": "1.1.2.0",
         "changelog": "Fixes the plugin storing its data inside the Jellyfin plugin folder, which caused Jellyfin to delete every installed plugin's settings on restart. Existing plugin data is moved to the new location on first start.",
         "targetAbi": "10.11.0.0",
