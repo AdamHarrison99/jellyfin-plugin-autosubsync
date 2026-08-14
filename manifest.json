@@ -14,14 +14,6 @@
         "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-autosubsync/releases/download/v1.2.0.0/autosubsync-v1.2.0.0.zip",
         "checksum": "440f2f234e1ed99c7000a21042061827",
         "timestamp": "2026-08-14T20:02:38Z"
-      },
-      {
-        "version": "1.1.2.0",
-        "changelog": "Fixes the plugin storing its data inside the Jellyfin plugin folder, which caused Jellyfin to delete every installed plugin's settings on restart. Existing plugin data is moved to the new location on first start.",
-        "targetAbi": "10.11.0.0",
-        "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-autosubsync/releases/download/v1.1.2.0/autosubsync-v1.1.2.0.zip",
-        "checksum": "9f73b8c88552e2b9a613ae7c11110422",
-        "timestamp": "2026-08-13T14:24:54Z"
       }
     ]
   }
