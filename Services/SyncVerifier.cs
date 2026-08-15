@@ -18,7 +18,8 @@ public readonly record struct VerificationResult(
     SyncVerdict Verdict,
     int? BestShiftMs,
     int? DriftMs,
-    int Windows);
+    int Windows,
+    double Strength);
 
 // The speech onsets read out of one video, and the windows they were read from.
 public sealed record AudioSample(
@@ -53,6 +54,18 @@ public partial class SyncVerifier
     private const int MinimumHits = 12;
     private const double MinimumHitShare = 0.25;
     private const double PeakRatio = 1.4;
+
+    // ! Noise offers many near-equal answers, so beating the mean is not enough. The winner has
+    //   to beat the best shift that is nowhere near it.
+    private const double RivalRatio = 1.25;
+    private const int RivalGapMs = 1_000;
+
+    // ! Half a stretched subtitle is smeared across its own half of the error, so the same bar
+    //   would refuse every rate error there is.
+    private const double HalfRivalRatio = 1.1;
+
+    // Two windows a side is not enough to call a rate error.
+    private const int DriftWindows = 6;
 
     private readonly IMediaEncoder _mediaEncoder;
     private readonly ILogger<SyncVerifier> _logger;
@@ -136,14 +149,18 @@ public partial class SyncVerifier
             return Nothing(sample.Windows);
         }
 
-        var whole = Fit(sample.Onsets, sample.Plan, starts);
-        var drift = Drift(sample, starts);
+        var whole = Fit(sample.Onsets, sample.Plan, starts, RivalRatio, out var strength);
+
+        // ! Halved, each side is a shorter and weaker sample, so it is only asked at all once
+        //   there are windows to spare. Two a side is noise arguing with noise.
+        var halves = 0d;
+        var drift = sample.Windows >= DriftWindows ? Drift(sample, starts, out halves) : null;
 
         // ! A rate error can beat the sweep outright: no one shift fits the film, while each
         //   half of it still fits its own. That disagreement is the answer.
         if (drift is { } spread && Math.Abs(spread) > AlignedWithinMs)
         {
-            return new VerificationResult(SyncVerdict.Misaligned, whole, drift, sample.Windows);
+            return new VerificationResult(SyncVerdict.Misaligned, whole, drift, sample.Windows, halves);
         }
 
         if (whole is not { } best)
@@ -155,12 +172,15 @@ public partial class SyncVerifier
             Math.Abs(best) > AlignedWithinMs ? SyncVerdict.Misaligned : SyncVerdict.Aligned,
             best,
             drift,
-            sample.Windows);
+            sample.Windows,
+            strength);
     }
 
     // ! A rate error hides from a single shift: right at the start, minutes out at the end.
-    private static int? Drift(AudioSample sample, List<long> starts)
+    private static int? Drift(AudioSample sample, List<long> starts, out double strength)
     {
+        strength = 0;
+
         var half = sample.Plan.Count / 2;
         if (half < 2)
         {
@@ -170,8 +190,11 @@ public partial class SyncVerifier
         var early = sample.Plan.Take(half).ToList();
         var late = sample.Plan.Skip(sample.Plan.Count - half).ToList();
 
-        var first = Fit(Within(sample.Onsets, early), early, starts);
-        var second = Fit(Within(sample.Onsets, late), late, starts);
+        var first = Fit(Within(sample.Onsets, early), early, starts, HalfRivalRatio, out var opening);
+        var second = Fit(Within(sample.Onsets, late), late, starts, HalfRivalRatio, out var closing);
+
+        // The weaker half is what the answer rests on.
+        strength = Math.Min(opening, closing);
 
         return first is { } a && second is { } b ? b - a : null;
     }
@@ -181,16 +204,27 @@ public partial class SyncVerifier
             .Where(o => windows.Any(w => o >= w.StartMs && o <= w.StartMs + w.LengthMs))
             .ToList();
 
-    private static int? Fit(IReadOnlyList<long> onsets, IReadOnlyList<Window> windows, List<long> starts)
+    private static int? Fit(
+        IReadOnlyList<long> onsets,
+        IReadOnlyList<Window> windows,
+        List<long> starts,
+        double rivalRatio,
+        out double strength)
     {
         var reachable = starts.Count(start => windows
             .Any(w => start >= w.StartMs - SweepMs && start <= w.StartMs + w.LengthMs + SweepMs));
 
-        return reachable == 0 ? null : BestShift(onsets, starts, reachable);
+        if (reachable == 0)
+        {
+            strength = 0;
+            return null;
+        }
+
+        return BestShift(onsets, starts, reachable, rivalRatio, out strength);
     }
 
     private static VerificationResult Nothing(int windows)
-        => new(SyncVerdict.Inconclusive, null, null, windows);
+        => new(SyncVerdict.Inconclusive, null, null, windows, 0);
 
     public readonly record struct Window(long StartMs, long LengthMs);
 
@@ -215,12 +249,8 @@ public partial class SyncVerifier
         return windows;
     }
 
-    // ! Audio only, mono, 16 kHz. Decoding the video to read its audio costs minutes on HEVC.
-    private async Task<List<long>?> OnsetsAsync(
-        string ffmpegPath,
-        string videoPath,
-        Window window,
-        CancellationToken cancellationToken)
+    // One window of audio, decoded no further than it has to be.
+    private static ProcessStartInfo Reader(string ffmpegPath, string videoPath, Window window)
     {
         var startInfo = new ProcessStartInfo
         {
@@ -249,7 +279,20 @@ public partial class SyncVerifier
         startInfo.ArgumentList.Add("-sn");
         startInfo.ArgumentList.Add("-ar");
         startInfo.ArgumentList.Add("16000");
+
+        return startInfo;
+    }
+
+    // ! Audio only, mono, 16 kHz. Decoding the video to read its audio costs minutes on HEVC.
+    private async Task<List<long>?> OnsetsAsync(
+        string ffmpegPath,
+        string videoPath,
+        Window window,
+        CancellationToken cancellationToken)
+    {
+        var startInfo = Reader(ffmpegPath, videoPath, window);
         startInfo.ArgumentList.Add("-af");
+
         // ! The downmix belongs inside the graph. As an output option it lands after
         //   silencedetect, which then reads 5.1 and calls a channel bed silence.
         startInfo.ArgumentList.Add("aformat=channel_layouts=mono,silencedetect=noise=-30dB:d=0.35");
@@ -285,6 +328,14 @@ public partial class SyncVerifier
 
     // The shift that puts the most cues on a speech onset. Null when no shift stands out.
     internal static int? BestShift(IReadOnlyList<long> onsets, List<long> starts, int reachable)
+        => BestShift(onsets, starts, reachable, RivalRatio, out _);
+
+    internal static int? BestShift(
+        IReadOnlyList<long> onsets,
+        List<long> starts,
+        int reachable,
+        double rivalRatio,
+        out double strength)
     {
         var buckets = new HashSet<long>();
         foreach (var onset in onsets)
@@ -298,12 +349,14 @@ public partial class SyncVerifier
         var bestHits = -1;
         long total = 0;
         var samples = 0;
+        var sweep = new List<(int Shift, int Hits)>();
 
         for (var shift = -SweepMs; shift <= SweepMs; shift += StepMs)
         {
             var hits = Hits(buckets, starts, shift);
             total += hits;
             samples++;
+            sweep.Add((shift, hits));
 
             if (hits > bestHits)
             {
@@ -317,17 +370,28 @@ public partial class SyncVerifier
             }
         }
 
+        var answer = best[best.Count / 2];
+
+        // ! The best answer that is nowhere near this one. On noise the two are level.
+        var rival = sweep
+            .Where(s => Math.Abs(s.Shift - answer) > RivalGapMs)
+            .Select(s => s.Hits)
+            .DefaultIfEmpty(0)
+            .Max();
+
+        strength = bestHits / (double)Math.Max(1, rival);
+
         // ! Against the cues the windows can reach. A film's other nine tenths were never sampled
         //   and cannot hit at any shift.
         var floor = Math.Max(MinimumHits, (int)(reachable * MinimumHitShare));
         var mean = (double)total / samples;
 
-        if (bestHits < floor || bestHits < mean * PeakRatio)
+        if (bestHits < floor || bestHits < mean * PeakRatio || strength < rivalRatio)
         {
             return null;
         }
 
-        return best[best.Count / 2];
+        return answer;
     }
 
     private static int Hits(HashSet<long> buckets, List<long> starts, int shift)

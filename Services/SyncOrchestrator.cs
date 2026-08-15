@@ -291,10 +291,13 @@ public class SyncOrchestrator
 
                     record.Message = $"Already on the speech ({sits}ms); the engine was not run.";
                     _logger.LogInformation(
-                        "Left {Item} ({Key}) alone: its cues sit {Sits}ms from the speech",
+                        "Left {Item} ({Key}) alone: its cues sit {Sits}ms from the speech, "
+                        + "{Windows} windows, peak {Strength:F2}x",
                         target.ItemName,
                         target.Key,
-                        sits);
+                        sits,
+                        before.Windows,
+                        before.Strength);
                     SafeUpsert(record, SubtitleStageKind.Verify);
                     return record;
                 }
@@ -355,11 +358,14 @@ public class SyncOrchestrator
                 var miss = Math.Abs(drifting ? verdict.DriftMs!.Value : verdict.BestShiftMs ?? 0);
 
                 _logger.LogWarning(
-                    "Refused the sync for {Item} ({Key}): {Miss}ms off the speech, drifting {Drifting}",
+                    "Refused the sync for {Item} ({Key}): {Miss}ms off the speech, drifting {Drifting}, "
+                    + "{Windows} windows, peak {Strength:F2}x",
                     target.ItemName,
                     target.Key,
                     miss,
-                    drifting);
+                    drifting,
+                    verdict.Windows,
+                    verdict.Strength);
 
                 return Fail(
                     record,
