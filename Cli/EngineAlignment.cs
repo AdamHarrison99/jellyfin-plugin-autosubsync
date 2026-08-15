@@ -19,9 +19,13 @@ public partial class EngineAlignment
             return null;
         }
 
-        var score = Number(ScoreRegex(), diagnostics);
-        var offset = Number(OffsetRegex(), diagnostics);
-        var rate = Number(RateRegex(), diagnostics);
+        // ! Best, not last: a framerate search prints one score per candidate, and the gate only
+        //   refuses, so reading low is what costs a good sync.
+        var score = Numbers(ScoreRegex(), diagnostics) is { Count: > 0 } scores
+            ? scores.Max()
+            : (double?)null;
+        var offset = Last(OffsetRegex(), diagnostics);
+        var rate = Last(RateRegex(), diagnostics);
 
         return score is null && offset is null && rate is null
             ? null
@@ -32,20 +36,28 @@ public partial class EngineAlignment
     public double? PerShownSecond(double shownSeconds)
         => Score is { } score && shownSeconds > 0 ? score / shownSeconds : null;
 
-    private static double? Number(Regex pattern, string text)
+    private static List<double> Numbers(Regex pattern, string text)
     {
-        // ! The last one. A retried or multi-pass run prints more than once.
-        var matches = pattern.Matches(text);
+        var values = new List<double>();
 
-        return matches.Count > 0
-            && double.TryParse(
-                matches[^1].Groups["v"].Value,
-                NumberStyles.Float,
-                CultureInfo.InvariantCulture,
-                out var value)
-            ? value
-            : null;
+        foreach (Match match in pattern.Matches(text))
+        {
+            if (double.TryParse(
+                    match.Groups["v"].Value,
+                    NumberStyles.Float,
+                    CultureInfo.InvariantCulture,
+                    out var value))
+            {
+                values.Add(value);
+            }
+        }
+
+        return values;
     }
+
+    // The applied figure, which is whatever the engine printed last.
+    private static double? Last(Regex pattern, string text)
+        => Numbers(pattern, text) is { Count: > 0 } values ? values[^1] : null;
 
     [GeneratedRegex(@"score:\s*(?<v>-?[\d.]+)", RegexOptions.CultureInvariant)]
     private static partial Regex ScoreRegex();
