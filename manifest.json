@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.2.2.0",
+        "changelog": "Duplicate removal no longer deletes a subtitle as a duplicate of itself, and a subtitle removed as a duplicate is no longer retried and reported failed on every scan. Settings now apply to what has already been processed: lowering the minimum offset retries what it skipped, raising the maximum retries what it rejected, and changing an output setting reprocesses the subtitles it would have changed. Refreshing an item no longer re-runs subtitles that have not changed, and VobSub tracks identified by their .idx file are now recognized and can be converted with OCR.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-autosubsync/releases/download/v1.2.2.0/autosubsync-v1.2.2.0.zip",
+        "checksum": "9b175ab72aa7e9fce94589ff7d3adc00",
+        "timestamp": "2026-08-15T13:07:37Z"
+      },
+      {
         "version": "1.2.1.0",
         "changelog": "The full library scan now syncs several subtitles at once, governed by Concurrent syncs, and automatic concurrency measures how much work actually completes instead of trusting the permit. Each sync is pinned to one CPU thread so the core budget means what it says. Framerate corrections up to 30% are no longer rejected as over-large shifts, Maximum offset now defaults to 60 seconds and measures the shift only, and every sync logs how far it moved the subtitle.",
         "targetAbi": "10.11.0.0",
