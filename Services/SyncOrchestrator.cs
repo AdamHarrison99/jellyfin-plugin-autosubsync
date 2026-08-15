@@ -364,8 +364,8 @@ public class SyncOrchestrator
                 return Fail(
                     record,
                     drifting
-                        ? $"The audio has this drifting {miss}ms across the film, past the {SyncVerifier.AlignedWithinMs}ms tolerance."
-                        : $"The audio puts this {miss}ms off the speech, past the {SyncVerifier.AlignedWithinMs}ms tolerance.",
+                        ? $"The audio check refused this: it drifts across the film ({miss}ms)."
+                        : $"The audio check refused this: it is off the speech ({miss}ms).",
                     miss,
                     SubtitleStageKind.Verify);
             }

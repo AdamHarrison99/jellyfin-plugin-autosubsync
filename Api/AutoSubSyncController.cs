@@ -96,13 +96,22 @@ public class AutoSubSyncController : ControllerBase
         });
     }
 
+    // ! A trailing parenthetical is per-subtitle detail, and grouping wants the sentence alone.
+    private static string WithoutDetail(string line)
+    {
+        var close = line.LastIndexOf(')');
+        var open = close > 0 ? line.LastIndexOf('(', close - 1) : -1;
+
+        return open > 0 ? line[..open].TrimEnd() + line[(close + 1)..] : line;
+    }
+
     // ! An engine failure arrives as a whole stderr dump. The varying parts are file positions.
     private static string Summarize(string message)
     {
-        var line = message
+        var line = WithoutDetail(message
             .Split('\n')
             .Select(part => part.Trim())
-            .LastOrDefault(part => part.Length > 0) ?? message;
+            .LastOrDefault(part => part.Length > 0) ?? message);
 
         if (line.Length > 120)
         {
@@ -132,7 +141,6 @@ public class AutoSubSyncController : ControllerBase
         return builder.ToString();
     }
 
-    // The typical correction, over runs whose result was kept.
     // The typical correction, over runs whose result was kept.
     private static long? MedianAppliedOffset(List<SyncRecord> records)
     {
