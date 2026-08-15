@@ -40,8 +40,12 @@ public class SubtitleDeduplicator
 
         foreach (var group in Group(itemId, targets))
         {
-            groups++;
             var keeper = ChooseKeeper(group);
+
+            if (group.Count > 1)
+            {
+                groups++;
+            }
 
             foreach (var candidate in group)
             {
@@ -79,6 +83,15 @@ public class SubtitleDeduplicator
                 {
                     removed++;
                 }
+            }
+
+            if (!config.DryRunMode)
+            {
+                Canonicalize(keeper, config);
+            }
+            else if (CanonicalPath(keeper.Path) is { } wanted && !File.Exists(wanted))
+            {
+                _logger.LogInformation("Dry run: would rename {Path} to {Canonical}", keeper.Path, wanted);
             }
         }
 
@@ -138,8 +151,10 @@ public class SubtitleDeduplicator
             list.Add(candidate);
         }
 
+        // ! Singletons come back too. A slot deduplicated on an earlier pass still holds a
+        //   survivor named for duplicates that are already gone.
         return slots
-            .Where(pair => pair.Value.Count > 1 && !poisoned.Contains(pair.Key))
+            .Where(pair => !poisoned.Contains(pair.Key))
             .Select(pair => pair.Value)
             .ToList();
     }
@@ -223,6 +238,67 @@ public class SubtitleDeduplicator
             keeperPath);
 
         return true;
+    }
+
+    // The survivor keeps a discriminator only its duplicates made necessary.
+    private void Canonicalize(Candidate keeper, PluginConfiguration config)
+    {
+        if (CanonicalPath(keeper.Path) is not { } canonical || File.Exists(canonical))
+        {
+            return;
+        }
+
+        // ! A digit marker is legal. Renaming past it hides the file from discovery and rollback.
+        if (SubtitleNaming.IsPluginOutput(keeper.Path, config.MarkerSuffix)
+            && !SubtitleNaming.IsPluginOutput(canonical, config.MarkerSuffix))
+        {
+            return;
+        }
+
+        try
+        {
+            File.Move(keeper.Path, canonical);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogWarning(ex, "Could not rename {Path} to {Canonical}", keeper.Path, canonical);
+            return;
+        }
+
+        // ! Rollback restores to this, not to OutputPath, once the two differ.
+        keeper.Record.RenamedFromPath ??= keeper.Path;
+        keeper.Record.OutputPath = canonical;
+
+        _logger.LogInformation(
+            "Renamed {Path} to {Canonical}; its duplicates are gone",
+            keeper.Path,
+            canonical);
+
+        MarkStage(
+            keeper.Record,
+            StageOutcome.Succeeded,
+            $"Renamed to {Path.GetFileName(canonical)} once its duplicates were removed.");
+    }
+
+    // "movie.eng.0.srt" -> "movie.eng.srt". Two digits at most, so a year is never taken for one.
+    internal static string? CanonicalPath(string path)
+    {
+        var stem = Path.GetFileNameWithoutExtension(path);
+        var cut = stem.LastIndexOf('.');
+
+        if (cut <= 0)
+        {
+            return null;
+        }
+
+        var tail = stem[(cut + 1)..];
+        if (tail.Length is 0 or > 2 || !tail.All(char.IsAsciiDigit))
+        {
+            return null;
+        }
+
+        var directory = Path.GetDirectoryName(path) ?? string.Empty;
+        return Path.Combine(directory, stem[..cut] + Path.GetExtension(path));
     }
 
     // ! A store failure must not abort the sweep that called this.

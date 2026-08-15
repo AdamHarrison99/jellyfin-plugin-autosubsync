@@ -320,12 +320,10 @@
                         <span>Remove duplicate external subtitles</span>
                     </label>
                     <div class="fieldDescription">
-                        After everything for an item has synced, subtitle files of the same language
-                        and flags that turn out to hold at least 85% the same text and the same
-                        styling are collapsed to one. Only external files are removed; a track inside
+                        Subtitle files turn out to hold at least 85% the same text,
+                        styling, and format, are collapsed to one. Only external files are removed; a track inside
                         the video is never touched. Every removed file is copied to the backup vault
-                        first and is restored by "Roll back everything". Comparison happens only once
-                        every copy has synced, so an unsynced duplicate is never missed.
+                        first and is restored by "Roll back everything".
                     </div>
 
                     <div class="inputContainer">
@@ -356,23 +354,7 @@
                         alone.
                     </div>
 
-                    <div class="inputContainer">
-                        <label class="inputLabel" for="txtMinimumOffset">Minimum offset (ms)</label>
-                        <input is="emby-input" type="number" id="txtMinimumOffset" min="0" />
-                        <div class="fieldDescription">
-                            Discard a result that moves the subtitle less than this. Prevents writing
-                            files for subtitles that were already correct.
-                        </div>
-                    </div>
-
-                    <div class="inputContainer">
-                        <label class="inputLabel" for="txtMaximumOffset">Maximum offset (ms)</label>
-                        <input is="emby-input" type="number" id="txtMaximumOffset" min="0" />
-                        <div class="fieldDescription">
-                            Reject a result that moves the subtitle more than this. A shift over a
-                            minute usually means the sync latched onto the wrong audio, and writing
-                            it would replace a good subtitle with a worse one. Set to 0 to accept any shift.
-                        </div>
+                    <div class="fieldDescription">
                     </div>
 
                     <br />
@@ -385,10 +367,7 @@
                             How many subtitles the full library scan, and new items as they arrive,
                             are synced at once. Each sync reads the whole video file to analyse its
                             audio, so the limit is often your storage rather than your CPU.
-                            <strong>0 = automatic</strong>: starts at one, measures how much work
-                            actually completes, and adds more only while that helps — never taking
-                            more than half of your cores. Set a number to override it; on
-                            network storage a lower number is usually faster, not slower.
+                            <strong>0 = automatic</strong>: Set a number to override it.
                         </div>
                     </div>
 
@@ -536,6 +515,7 @@
                 var stageLabels = {
                     Convert: 'OCR (image to text)',
                     Sync: 'Synchronization',
+                    Verify: 'Audio check',
                     Transform: 'Hearing-impaired text',
                     Deduplicate: 'Duplicate removal'
                 };
@@ -573,6 +553,7 @@
                         + statCard(status.Synced, 'synced')
                         + statCard(formatOffset(status.MedianAppliedOffsetMs), 'median shift')
                         + statCard(status.Skipped, 'already in sync')
+                        + statCard(status.Rejected, 'refused by audio check', status.Rejected ? 'isFailed' : '')
                         + statCard(status.Failed, 'failed', status.Failed ? 'isFailed' : '')
                         + statCard(status.Unsupported, 'unsupported')
                         + statCard(status.DryRun, 'pending dry run')
@@ -589,6 +570,19 @@
                         + '<td class="num' + (stage.Failed ? ' isFailed' : '') + '">' + escapeHtml(stage.Failed) + '</td>'
                         + '<td class="num">' + escapeHtml(stage.AverageMs ? formatDuration(stage.AverageMs) : '—') + '</td>'
                         + '</tr>';
+                }
+
+                function reasonBlock(heading, reasons) {
+                    if (!reasons || !reasons.length) {
+                        return '';
+                    }
+
+                    return '<div class="statusHeading">' + escapeHtml(heading) + '</div>'
+                        + '<div class="statusReasons">'
+                        + reasons.map(function (r) {
+                            return escapeHtml(r.Count + ' × ' + r.Reason);
+                        }).join('<br />')
+                        + '</div>';
                 }
 
                 function renderStages(page, stages) {
@@ -617,15 +611,9 @@
                         renderCounts(page, status);
                         renderStages(page, status.Stages);
 
-                        var reasons = status.UnsupportedReasons || [];
-                        page.querySelector('#statusUnsupported').innerHTML = reasons.length
-                            ? '<div class="statusHeading">Unsupported tracks</div>'
-                                + '<div class="statusReasons">'
-                                + reasons.map(function (r) {
-                                    return escapeHtml(r.Count + ' × ' + r.Reason);
-                                }).join('<br />')
-                                + '</div>'
-                            : '';
+                        page.querySelector('#statusUnsupported').innerHTML =
+                            reasonBlock('Unsupported tracks', status.UnsupportedReasons)
+                            + reasonBlock('Why syncs failed', status.FailureReasons);
 
                         page.querySelector('#statusPanel').style.display = '';
                         scheduleStatus(page, status.InFlight ? busyInterval : idleInterval);
@@ -675,8 +663,6 @@
                         page.querySelector('#txtLanguages').value = (config.LanguageAllowList || []).join(', ');
 
                         page.querySelector('#selWriteMode').value = config.ExternalWriteMode;
-                        page.querySelector('#txtMinimumOffset').value = config.MinimumOffsetMs;
-                        page.querySelector('#txtMaximumOffset').value = config.MaximumOffsetMs;
 
                         page.querySelector('#txtConcurrency').value = config.MaxConcurrentSyncs;
 
@@ -726,8 +712,6 @@
                         config.DeduplicateSubtitles = page.querySelector('#chkDeduplicate').checked;
                         config.LanguageAllowList = splitList(page.querySelector('#txtLanguages').value);
 
-                        config.MinimumOffsetMs = readInt(page, '#txtMinimumOffset', 150, 0, 600000);
-                        config.MaximumOffsetMs = readInt(page, '#txtMaximumOffset', 60000, 0, 3600000);
                         config.MaxConcurrentSyncs = readInt(page, '#txtConcurrency', 0, 0, 8);
 
                         config.AutoSyncOnItemAdded = page.querySelector('#chkAutoOnAdd').checked;
@@ -838,3 +822,4 @@
     </div>
 </body>
 </html>
+  

@@ -16,7 +16,8 @@ internal static class FfmpegProcess
     public static async Task<FfmpegOutcome> RunAsync(
         ProcessStartInfo startInfo,
         ILogger logger,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int keepChars = StandardErrorTailChars)
     {
         var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
         var stderr = new StringBuilder();
@@ -70,10 +71,10 @@ internal static class FfmpegProcess
                 throw;
             }
 
-            return new FfmpegOutcome(false, "ffmpeg timed out. " + Tail(stderr.ToString()));
+            return new FfmpegOutcome(false, "ffmpeg timed out. " + Tail(stderr.ToString(), keepChars));
         }
 
-        return new FfmpegOutcome(process.ExitCode == 0, Tail(stderr.ToString()));
+        return new FfmpegOutcome(process.ExitCode == 0, Tail(stderr.ToString(), keepChars));
     }
 
     private static void KillProcessTree(Process process, ILogger logger)
@@ -91,6 +92,6 @@ internal static class FfmpegProcess
         }
     }
 
-    private static string Tail(string value)
-        => value.Length <= StandardErrorTailChars ? value : value[^StandardErrorTailChars..];
+    private static string Tail(string value, int keepChars)
+        => value.Length <= keepChars ? value : value[^keepChars..];
 }

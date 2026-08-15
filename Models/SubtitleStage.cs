@@ -10,7 +10,8 @@ public enum SubtitleStageKind
     Convert = 1,
     Sync = 2,
     Transform = 3,
-    Deduplicate = 4
+    Deduplicate = 4,
+    Verify = 5
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]

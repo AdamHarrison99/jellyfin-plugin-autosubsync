@@ -99,17 +99,64 @@ public class RollbackService
 
     private RollbackOutcome Restore(SyncRecord record)
     {
-        var original = record.OutputPath ?? record.SourceSubtitlePath;
+        var original = record.RenamedFromPath ?? record.OutputPath ?? record.SourceSubtitlePath;
 
-        if (record.BackupPath is null || original is null)
+        // ! A file the plugin only renamed has no backup behind it. Put the name back.
+        if (record.BackupPath is null)
+        {
+            return Rename(record, original);
+        }
+
+        if (original is null)
         {
             _logger.LogInformation("Nothing to restore for {Item}: no backup was taken", record.ItemName);
             return RollbackOutcome.Skipped;
         }
 
+        // ! The backup lands under the old name. Take the renamed copy out first.
+        if (record.RenamedFromPath is not null
+            && record.OutputPath is { } renamed
+            && !string.Equals(renamed, original, StringComparison.OrdinalIgnoreCase)
+            && File.Exists(renamed))
+        {
+            try
+            {
+                File.Delete(renamed);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.LogError(ex, "Failed to remove the renamed {Path}", renamed);
+                return RollbackOutcome.Failed;
+            }
+        }
+
         return _vault.Restore(record.BackupPath, original)
             ? RollbackOutcome.Restored
             : RollbackOutcome.Failed;
+    }
+
+    private RollbackOutcome Rename(SyncRecord record, string? original)
+    {
+        if (record.RenamedFromPath is null
+            || original is null
+            || record.OutputPath is not { } renamed
+            || string.Equals(renamed, original, StringComparison.OrdinalIgnoreCase)
+            || !File.Exists(renamed)
+            || File.Exists(original))
+        {
+            return RollbackOutcome.Skipped;
+        }
+
+        try
+        {
+            File.Move(renamed, original);
+            return RollbackOutcome.Restored;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogError(ex, "Failed to rename {Path} back to {Original}", renamed, original);
+            return RollbackOutcome.Failed;
+        }
     }
 
     private RollbackOutcome Delete(SyncRecord record, PluginConfiguration config)

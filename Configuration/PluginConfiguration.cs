@@ -51,13 +51,6 @@ public class PluginConfiguration : BasePluginConfiguration
     // ! Changing this orphans output written under the old marker.
     public string MarkerSuffix { get; set; } = "autosubsync";
 
-    // ! 150ms is roughly the threshold of perception, and ffsubsync's own residual on a correctly
-    //   timed subtitle sits under it. Lower values rewrite files nobody could tell had changed.
-    public int MinimumOffsetMs { get; set; } = 150;
-
-    // ! A result past this is discarded, not written. 0 accepts any shift.
-    public int MaximumOffsetMs { get; set; } = 60_000;
-
     // ---- Throttling ----
 
     public const int AutoConcurrency = 0;
@@ -70,9 +63,9 @@ public class PluginConfiguration : BasePluginConfiguration
     // ---- Behavior ----
 
     // Covers ItemAdded and ItemUpdated.
-    public bool AutoSyncOnItemAdded { get; set; } = true;
+    public bool AutoSyncOnItemAdded { get; set; }
 
-    public bool RefreshItemAfterSync { get; set; } = true;
+    public bool RefreshItemAfterSync { get; set; }
 
     // ! Every setting that changes what gets written; throttling settings are absent by design.
     //   A record stamped with anything else is stale and runs again.
@@ -101,14 +94,6 @@ public class PluginConfiguration : BasePluginConfiguration
     {
         MaxConcurrentSyncs = Math.Clamp(MaxConcurrentSyncs, AutoConcurrency, 8);
         PerSyncTimeoutMinutes = Math.Clamp(PerSyncTimeoutMinutes, 1, 240);
-        MinimumOffsetMs = Math.Clamp(MinimumOffsetMs, 0, 600_000);
-        MaximumOffsetMs = Math.Clamp(MaximumOffsetMs, 0, 3_600_000);
-
-        // ! An inverted pair leaves no window, and every result is silently rejected or skipped.
-        if (MaximumOffsetMs > 0 && MinimumOffsetMs > MaximumOffsetMs)
-        {
-            MinimumOffsetMs = MaximumOffsetMs;
-        }
 
         // ! Must never be empty.
         MarkerSuffix = SanitizeMarker(MarkerSuffix);

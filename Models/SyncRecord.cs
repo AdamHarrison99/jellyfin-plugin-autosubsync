@@ -24,6 +24,9 @@ public class SyncRecord
 
     public string? OutputPath { get; set; }
 
+    // ! Where rollback must put the backup. Set only when deduplication renamed the survivor.
+    public string? RenamedFromPath { get; set; }
+
     public string? BackupPath { get; set; }
 
     // ! Rollback branches on this. Retimed restores; Created deletes.
@@ -51,13 +54,16 @@ public class SyncRecord
 
     public int MeasurementVersion { get; set; }
 
-    // ! Set only when MaximumOffsetMs rejected a result. Raising that limit retries the record.
+    // ! Set only when the audio check refused a result. Widening the tolerance retries the record.
     public long? RejectedOffsetMs { get; set; }
+
+    // ! Set only when the audio check left a subtitle alone. Tightening the tolerance retries it.
+    public long? AlignedAtMs { get; set; }
 
     // How far the engine moved the subtitle, on a run that was kept. Null if the timings would not parse.
     public long? AppliedOffsetMs { get; set; }
 
-    // ! Set only when MinimumOffsetMs skipped a result. Lowering that minimum retries the record.
+    // ! Set only when a result moved too little to keep. A lower minimum retries the record.
     public long? SkippedMovementMs { get; set; }
 
     // ! The output settings this outcome was produced under. Null means a record from before

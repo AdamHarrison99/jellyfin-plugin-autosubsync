@@ -20,6 +20,9 @@ public class SyncOrchestrator
     // ! Admits every framerate conversion in use; 23.976 to 30 is the widest at 25.1%.
     private const double MaximumRateDrift = 0.30;
 
+    // Under this the engine did nothing worth writing a file for.
+    private const int MinimumMovementMs = 150;
+
     private readonly IAssyCliRunner _runner;
     private readonly ISubtitleExtractor _extractor;
     private readonly ImageSubtitleExtractor _imageExtractor;
@@ -31,6 +34,7 @@ public class SyncOrchestrator
     private readonly IProviderManager _providerManager;
     private readonly IFileSystem _fileSystem;
     private readonly IApplicationPaths _applicationPaths;
+    private readonly SyncVerifier _verifier;
     private readonly SubtitlePlacer _placer;
     private readonly ILogger<SyncOrchestrator> _logger;
 
@@ -42,6 +46,7 @@ public class SyncOrchestrator
         ISyncStore store,
         SyncQueue queue,
         TargetLocks targets,
+        SyncVerifier verifier,
         ILibraryManager libraryManager,
         IProviderManager providerManager,
         IFileSystem fileSystem,
@@ -57,6 +62,7 @@ public class SyncOrchestrator
         _store = store;
         _queue = queue;
         _targets = targets;
+        _verifier = verifier;
         _libraryManager = libraryManager;
         _providerManager = providerManager;
         _fileSystem = fileSystem;
@@ -259,6 +265,41 @@ public class SyncOrchestrator
                 return record;
             }
 
+            var starts = SyncVerifier.Starts(inputPath);
+            var sample = starts is not null
+                ? await _verifier
+                    .SampleAsync(target.VideoPath, starts, cancellationToken)
+                    .ConfigureAwait(false)
+                : null;
+
+            if (sample is not null && starts is not null)
+            {
+                var before = SyncVerifier.Score(sample, starts);
+                record.RecordStage(SubtitleStageKind.Verify, StageFor(before.Verdict));
+
+                if (before is { Verdict: SyncVerdict.Aligned, BestShiftMs: { } sits })
+                {
+                    record.Status = SyncStatus.Skipped;
+                    record.AlignedAtMs = sits;
+
+                    // ! The file stands as it is, so deduplication has to be told where it is.
+                    //   Without a path the slot reads as unsynced and its duplicates survive.
+                    if (target.Origin == SubtitleOrigin.External)
+                    {
+                        record.OutputPath ??= target.SubtitlePath;
+                    }
+
+                    record.Message = $"Already on the speech ({sits}ms); the engine was not run.";
+                    _logger.LogInformation(
+                        "Left {Item} ({Key}) alone: its cues sit {Sits}ms from the speech",
+                        target.ItemName,
+                        target.Key,
+                        sits);
+                    SafeUpsert(record, SubtitleStageKind.Verify);
+                    return record;
+                }
+            }
+
             var attempt = await RunEngineAsync(target, record, inputPath, cancellationToken)
                 .ConfigureAwait(false);
 
@@ -268,15 +309,6 @@ public class SyncOrchestrator
             }
 
             var change = SubtitleOffsetProbe.Measure(inputPath, attempt.ProducedPath);
-
-            if (config.MaximumOffsetMs > 0 && change.ConstantMs > config.MaximumOffsetMs)
-            {
-                TryDelete(attempt.ProducedPath);
-                return Fail(
-                    record,
-                    $"The engine moved the subtitle by {change.ConstantMs}ms, past the {config.MaximumOffsetMs}ms limit.",
-                    change.ConstantMs);
-            }
 
             if (change.RateRatio is { } ratio && Math.Abs(ratio - 1) > MaximumRateDrift)
             {
@@ -288,21 +320,54 @@ public class SyncOrchestrator
 
             var moved = Math.Max(change.ConstantMs ?? 0, change.DriftMs ?? 0);
 
-            if (config.MinimumOffsetMs > 0 && change.ConstantMs is not null && moved < config.MinimumOffsetMs)
+            if (change.ConstantMs is not null && moved < MinimumMovementMs)
             {
                 TryDelete(attempt.ProducedPath);
                 record.Status = SyncStatus.Skipped;
                 record.AppliedOffsetMs = change.ConstantMs;
                 record.SkippedMovementMs = moved;
-                record.Message = $"Already in sync ({moved}ms, under the {config.MinimumOffsetMs}ms minimum).";
+                record.Message = $"Already in sync ({moved}ms, under the {MinimumMovementMs}ms minimum).";
                 _logger.LogInformation(
                     "Left {Item} ({Key}) alone: {Moved}ms is under the {Minimum}ms minimum",
                     target.ItemName,
                     target.Key,
                     moved,
-                    config.MinimumOffsetMs);
+                    MinimumMovementMs);
                 SafeUpsert(record);
                 return record;
+            }
+
+            // ! Before the strip. Verification needs the cues the engine placed, not rewritten text.
+            var verdict = sample is not null && SyncVerifier.Starts(attempt.ProducedPath) is { } placed
+                ? SyncVerifier.Score(sample, placed)
+                : await _verifier
+                    .VerifyAsync(target.VideoPath, attempt.ProducedPath, cancellationToken)
+                    .ConfigureAwait(false);
+
+            record.RecordStage(SubtitleStageKind.Verify, StageFor(verdict.Verdict));
+
+            if (verdict.Verdict == SyncVerdict.Misaligned)
+            {
+                TryDelete(attempt.ProducedPath);
+
+                var drifting = verdict.DriftMs is { } spread
+                    && Math.Abs(spread) > SyncVerifier.AlignedWithinMs;
+                var miss = Math.Abs(drifting ? verdict.DriftMs!.Value : verdict.BestShiftMs ?? 0);
+
+                _logger.LogWarning(
+                    "Refused the sync for {Item} ({Key}): {Miss}ms off the speech, drifting {Drifting}",
+                    target.ItemName,
+                    target.Key,
+                    miss,
+                    drifting);
+
+                return Fail(
+                    record,
+                    drifting
+                        ? $"The audio has this drifting {miss}ms across the film, past the {SyncVerifier.AlignedWithinMs}ms tolerance."
+                        : $"The audio puts this {miss}ms off the speech, past the {SyncVerifier.AlignedWithinMs}ms tolerance.",
+                    miss,
+                    SubtitleStageKind.Verify);
             }
 
             var finalPath = config.RemoveHearingImpairedTags
@@ -685,25 +750,32 @@ public class SyncOrchestrator
         => (record.Status == SyncStatus.Synced || record.Status == SyncStatus.Skipped)
            && SettingsUnchanged(record, config)
            && !MinimumWouldNowSync(record, config)
+           && !ToleranceWouldNowSync(record, config)
            && FingerprintMatches(record, target, subtitlePath);
 
     // ! The engine ran already. Identical inputs fail identically; only a change retries.
     internal static bool IsExhausted(SyncRecord record, SubtitleTarget target, PluginConfiguration config)
         => record.Status == SyncStatus.Failed
            && SettingsUnchanged(record, config)
-           && !LimitWouldNowAccept(record, config)
+           && !ToleranceWouldNowAccept(record, config)
            && FingerprintMatches(record, target, target.SubtitlePath);
 
-    // ! A rejection the limit caused is not an engine failure. Raising the limit has to retry it.
-    private static bool LimitWouldNowAccept(SyncRecord record, PluginConfiguration config)
+    // ! A refusal the audio caused is not an engine failure. Widening the tolerance retries it.
+    private static bool ToleranceWouldNowAccept(SyncRecord record, PluginConfiguration config)
         => record.RejectedOffsetMs is { } rejected
-           && (config.MaximumOffsetMs <= 0 || rejected <= config.MaximumOffsetMs);
+           && rejected <= SyncVerifier.AlignedWithinMs;
+
+    // ! A subtitle the audio agreed with, never handed to the engine. Tightening retries it.
+    private static bool ToleranceWouldNowSync(SyncRecord record, PluginConfiguration config)
+        => record.Status == SyncStatus.Skipped
+           && record.AlignedAtMs is { } sits
+           && Math.Abs(sits) > SyncVerifier.AlignedWithinMs;
 
     // ! The mirror of the rejection rule. Lowering the minimum has to retry what it skipped.
     private static bool MinimumWouldNowSync(SyncRecord record, PluginConfiguration config)
         => record.Status == SyncStatus.Skipped
            && (record.SkippedMovementMs ?? record.AppliedOffsetMs) is { } moved
-           && (config.MinimumOffsetMs <= 0 || moved >= config.MinimumOffsetMs);
+           && moved >= MinimumMovementMs;
 
     // An unstamped record predates stamping and is taken at face value.
     private static bool SettingsUnchanged(SyncRecord record, PluginConfiguration config)
@@ -744,7 +816,20 @@ public class SyncOrchestrator
             RefreshPriority.Low);
     }
 
-    private SyncRecord Fail(SyncRecord record, string? message, long? rejectedOffsetMs = null)
+    // ! An inconclusive check is a skipped stage, not a failed one. Nothing was refused.
+    private static StageOutcome StageFor(SyncVerdict verdict)
+        => verdict switch
+        {
+            SyncVerdict.Aligned => StageOutcome.Succeeded,
+            SyncVerdict.Misaligned => StageOutcome.Failed,
+            _ => StageOutcome.Skipped
+        };
+
+    private SyncRecord Fail(
+        SyncRecord record,
+        string? message,
+        long? rejectedOffsetMs = null,
+        SubtitleStageKind kind = SubtitleStageKind.Sync)
     {
         record.Status = SyncStatus.Failed;
         record.RejectedOffsetMs = rejectedOffsetMs;
@@ -752,7 +837,7 @@ public class SyncOrchestrator
         record.SkippedMovementMs = null;
         record.Message = string.IsNullOrWhiteSpace(message) ? "Sync failed." : message;
         _logger.LogWarning("Sync failed for {Item}: {Message}", record.ItemName, record.Message);
-        SafeUpsert(record);
+        SafeUpsert(record, kind);
         return record;
     }
 

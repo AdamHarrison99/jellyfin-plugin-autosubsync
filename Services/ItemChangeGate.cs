@@ -111,8 +111,6 @@ public class ItemChangeGate
         => string.Join(
             '|',
             config.OutcomeStamp(),
-            config.MinimumOffsetMs.ToString(CultureInfo.InvariantCulture),
-            config.MaximumOffsetMs.ToString(CultureInfo.InvariantCulture),
             config.ProcessExternalSubtitles,
             config.ProcessEmbeddedSubtitles,
             config.SkipEmbeddedWhenExternalExists,

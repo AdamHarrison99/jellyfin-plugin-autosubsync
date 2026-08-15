@@ -89,8 +89,6 @@ what it would have done.
 | Setting | Default | What it does |
 | --- | --- | --- |
 | Where to write synced external subtitles | Overwrite the original | Overwrite replaces the file in place, keeping its name, and always backs the original up first. Side-by-side leaves the original alone and writes a new marked file. Embedded tracks always become new files regardless. |
-| Minimum offset (ms) | `150` | Discard a result that moves the subtitle less than this. Stops the plugin rewriting subtitles that were already correct. Below roughly 150 ms a shift is imperceptible; above it, people notice. |
-| Maximum offset (ms) | `60000` | Reject a result that shifts the subtitle more than this, and leave the original in place. A shift over a minute usually means the sync latched onto the wrong audio. Set to 0 to accept any shift. |
 
 ### Throttling
 
@@ -102,8 +100,8 @@ what it would have done.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| Synchronize new items as they are added | On | Also covers updates, so a subtitle downloaded by Jellyfin is picked up without waiting for the nightly scan. |
-| Refresh the item after writing a subtitle | On | Tells Jellyfin to re-index the item so the new subtitle appears without a manual library scan. |
+| Synchronize new items as they are added | Off | Also covers updates, so a subtitle downloaded by Jellyfin is picked up without waiting for the nightly scan. |
+| Refresh the item after writing a subtitle | Off | Tells Jellyfin to re-index the item so the new subtitle appears without a manual library scan. |
 
 Works seamlessly with the [Jellyfin OpenSubtitles Plugin](https://github.com/jellyfin/jellyfin-plugin-opensubtitles), picking up auto downloaded subs and syncing them to your media. Make sure you have "Only download subtitles that are a perfect match for video files" unchecked in your library's settings to take advantage of auto subtitle syncing.
 
@@ -114,12 +112,33 @@ recognizes its own output and how rollback knows what it may delete.
 
 **Settings apply to what has already been processed.** A subtitle is normally synced once and then
 left alone until it or its video changes — but changing a setting that would have produced a
-different result puts the affected subtitles back in the queue on the next run. Lower the minimum
-offset and the subtitles that were previously left alone for moving too little are re-examined;
-raise the maximum and the results that were rejected as too large are retried. Turning off dry run,
+different result puts the affected subtitles back in the queue on the next run. Turning off dry run,
 turning on hearing-impaired removal or OCR, or changing the write mode, output encoding or marker
-does the same. Concurrency and the timeout change nothing about the output, so they reprocess
+puts the affected subtitles back in the queue. Concurrency and the timeout change nothing about the output, so they reprocess
 nothing.
+
+## The audio check
+
+Every subtitle is scored against the video's own audio, twice, and this is not something you
+configure.
+
+**Before syncing**, the plugin reads a sample of the audio and asks whether the subtitle's lines
+already land on the speech. If they do, the sync engine is never run and the file is left exactly
+as it is. That is faster than syncing it, and it removes the only way this plugin can make a
+correct subtitle worse.
+
+**After syncing**, the result is scored the same way. A sync that latched onto the wrong audio is
+thrown away and your original is left alone, and the item is listed under **refused by audio
+check** on the status panel rather than as a failure.
+
+A rate error — a subtitle that is right at the start and minutes out by the end, usually a
+framerate mismatch — is caught by fitting the first half of the film against the second and
+comparing the two.
+
+Some titles cannot be measured: an action film with a continuous score may never produce a clear
+answer. When that happens the subtitle is synced and the result is kept, exactly as before. The
+check only ever refuses a result it can positively show is wrong. It adds a few seconds per
+subtitle, against a sync that takes minutes.
 
 ## Undoing everything
 

@@ -68,7 +68,9 @@ public class AutoSubSyncController : ControllerBase
             Total = records.Count,
             Synced = records.Count(r => r.Status == SyncStatus.Synced),
             MedianAppliedOffsetMs = MedianAppliedOffset(records),
-            Failed = records.Count(r => r.Status == SyncStatus.Failed),
+            // A result the audio refused is not a tool failure, and the two are not fixed alike.
+            Failed = records.Count(r => r.Status == SyncStatus.Failed && r.RejectedOffsetMs is null),
+            Rejected = records.Count(r => r.Status == SyncStatus.Failed && r.RejectedOffsetMs is not null),
             Skipped = records.Count(r => r.Status == SyncStatus.Skipped),
             DryRun = records.Count(r => r.Status == SyncStatus.DryRun),
             Unsupported = records.Count(r => r.Status == SyncStatus.Unsupported),
@@ -82,11 +84,56 @@ public class AutoSubSyncController : ControllerBase
                 .Select(g => new { Reason = g.Key, Count = g.Count() })
                 .ToList(),
 
+            FailureReasons = records
+                .Where(r => r.Status == SyncStatus.Failed && r.Message is not null)
+                .GroupBy(r => Summarize(r.Message!))
+                .OrderByDescending(g => g.Count())
+                .Select(g => new { Reason = g.Key, Count = g.Count() })
+                .Take(8)
+                .ToList(),
+
             LastRecordUpdateUtc = records.Count == 0 ? null : records.Max(r => (DateTime?)r.UpdatedUtc)
         });
     }
 
-    // The typical correction, over runs whose result was kept. Null once nothing has been measured.
+    // ! An engine failure arrives as a whole stderr dump. The varying parts are file positions.
+    private static string Summarize(string message)
+    {
+        var line = message
+            .Split('\n')
+            .Select(part => part.Trim())
+            .LastOrDefault(part => part.Length > 0) ?? message;
+
+        if (line.Length > 120)
+        {
+            line = line[..120] + "…";
+        }
+
+        var builder = new System.Text.StringBuilder(line.Length);
+        var inNumber = false;
+
+        foreach (var character in line)
+        {
+            if (char.IsAsciiDigit(character))
+            {
+                if (!inNumber)
+                {
+                    builder.Append('#');
+                }
+
+                inNumber = true;
+                continue;
+            }
+
+            inNumber = false;
+            builder.Append(character);
+        }
+
+        return builder.ToString();
+    }
+
+    // The typical correction, over runs whose result was kept.
+    // The typical correction, over runs whose result was kept.
     private static long? MedianAppliedOffset(List<SyncRecord> records)
     {
         var applied = records
@@ -141,6 +188,7 @@ public class AutoSubSyncController : ControllerBase
         {
             (Kind: SubtitleStageKind.Convert, On: config.ConvertImageSubtitles),
             (Kind: SubtitleStageKind.Sync, On: true),
+            (Kind: SubtitleStageKind.Verify, On: true),
             (Kind: SubtitleStageKind.Transform, On: config.RemoveHearingImpairedTags),
             (Kind: SubtitleStageKind.Deduplicate, On: config.DeduplicateSubtitles)
         };
