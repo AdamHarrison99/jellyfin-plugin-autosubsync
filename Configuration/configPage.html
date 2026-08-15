@@ -613,7 +613,7 @@
 
                         page.querySelector('#statusUnsupported').innerHTML =
                             reasonBlock('Unsupported tracks', status.UnsupportedReasons)
-                            + reasonBlock('Why syncs failed', status.FailureReasons);
+                            + reasonBlock('Failure reasons', status.FailureReasons);
 
                         page.querySelector('#statusPanel').style.display = '';
                         scheduleStatus(page, status.InFlight ? busyInterval : idleInterval);
@@ -822,4 +822,3 @@
     </div>
 </body>
 </html>
-  

@@ -166,7 +166,10 @@ public class SeConvRunner : ISeConvRunner
                 throw;
             }
 
-            return new SeConvResult(null, "The OCR tool timed out.", stopwatch.ElapsedMilliseconds);
+            return new SeConvResult(
+                null,
+                "Failed: the OCR tool timed out.",
+                stopwatch.ElapsedMilliseconds);
         }
 
         stopwatch.Stop();
@@ -179,7 +182,9 @@ public class SeConvRunner : ISeConvRunner
             var message = Tail(stderr.ToString());
             return new SeConvResult(
                 null,
-                string.IsNullOrWhiteSpace(message) ? "The OCR tool produced no subtitle cues." : message,
+                string.IsNullOrWhiteSpace(message)
+                    ? "Failed: the OCR tool produced no subtitle cues."
+                    : message,
                 stopwatch.ElapsedMilliseconds);
         }
 

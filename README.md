@@ -85,8 +85,7 @@ configure, and it costs a few seconds against a sync that takes minutes.
   **refused by audio check** rather than as a failure.
 - **Right at the start, minutes out at the end** — that framerate mismatch is caught too.
 
-Some titles cannot be measured; a film under a continuous score may never give a clear answer.
-Those are synced and kept as before. The check only refuses what it can show is wrong.
+Some titles cannot be measured; a film under a continuous score may never give a clear answer. The check only refuses what it can show is wrong.
 
 ## Undoing everything
 

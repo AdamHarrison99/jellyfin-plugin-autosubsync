@@ -21,7 +21,7 @@ public class SyncOrchestrator
     private const double MaximumRateDrift = 0.30;
 
     // Under this the engine did nothing worth writing a file for.
-    private const int MinimumMovementMs = 150;
+    private const int MinimumMovementMs = 100;
 
     // ! A subtitle that cannot align scores about 10 a second against its video; one that can
     //   scores 40 and up. Half the lowest real reading measured, so it only catches the floor.
@@ -109,7 +109,7 @@ public class SyncOrchestrator
             if (config.DryRunMode)
             {
                 record.Status = SyncStatus.DryRun;
-                record.Message = "Dry run: would sync this subtitle.";
+                record.Message = "Dry run: this subtitle would be synced.";
                 _logger.LogInformation(
                     "DRY RUN: would sync {Origin} subtitle for {Item}",
                     target.Origin,
@@ -130,7 +130,7 @@ public class SyncOrchestrator
             // ! Record it, then let it propagate. Swallowing it here leaves the caller's loop
             //   running and every remaining target starts an engine only to be killed again.
             record.Status = SyncStatus.Pending;
-            record.Message = "Cancelled.";
+            record.Message = "Cancelled: the sync was stopped before it finished.";
             SafeUpsert(record);
             throw;
         }
@@ -219,7 +219,7 @@ public class SyncOrchestrator
                 record.Status = SyncStatus.Skipped;
                 record.AppliedOffsetMs = null;
                 record.SkippedMovementMs = null;
-                record.Message = "The subtitle file is no longer on disk.";
+                record.Message = "Skipped: the subtitle file is no longer on disk.";
                 _logger.LogDebug("{Item} ({Key}) is gone from disk", target.ItemName, target.Key);
                 SafeUpsert(record);
                 return record;
@@ -255,7 +255,7 @@ public class SyncOrchestrator
 
                 if (string.IsNullOrEmpty(inputPath) || !File.Exists(inputPath))
                 {
-                    return Fail(record, "Could not produce a subtitle file to sync.");
+                    return Fail(record, "Failed: no subtitle file could be produced to sync.");
                 }
             }
 
@@ -264,7 +264,7 @@ public class SyncOrchestrator
             if (!SyncEngine.Supports(extension))
             {
                 record.Status = SyncStatus.Unsupported;
-                record.Message = $"The sync engine does not read {extension} subtitles.";
+                record.Message = $"Unsupported: the sync engine does not read {extension} subtitles.";
                 SafeUpsert(record);
                 return record;
             }
@@ -293,9 +293,9 @@ public class SyncOrchestrator
                         record.OutputPath ??= target.SubtitlePath;
                     }
 
-                    record.Message = $"Already on the speech ({sits}ms); the engine was not run.";
+                    record.Message = $"Skipped: already aligned with the audio ({sits} ms).";
                     _logger.LogInformation(
-                        "Left {Item} ({Key}) alone: its cues sit {Sits}ms from the speech, "
+                        "Skipped {Item} ({Key}): its cues sit {Sits} ms from the speech, "
                         + "{Windows} windows, peak {Strength:F2}x",
                         target.ItemName,
                         target.Key,
@@ -322,7 +322,8 @@ public class SyncOrchestrator
                 TryDelete(attempt.ProducedPath);
                 return Fail(
                     record,
-                    $"The engine rescaled the subtitle by {ratio:P1}, which is no framerate conversion.");
+                    $"Rejected: the sync engine rescaled the subtitle by {ratio:P1}, which matches "
+                    + "no known framerate conversion.");
             }
 
             var moved = Math.Max(change.ConstantMs ?? 0, change.DriftMs ?? 0);
@@ -333,9 +334,11 @@ public class SyncOrchestrator
                 record.Status = SyncStatus.Skipped;
                 record.AppliedOffsetMs = change.ConstantMs;
                 record.SkippedMovementMs = moved;
-                record.Message = $"Already in sync ({moved}ms, under the {MinimumMovementMs}ms minimum).";
+                record.Message =
+                    $"Skipped: the sync engine moved the subtitle less than the "
+                    + $"{MinimumMovementMs} ms minimum ({moved} ms).";
                 _logger.LogInformation(
-                    "Left {Item} ({Key}) alone: {Moved}ms is under the {Minimum}ms minimum",
+                    "Skipped {Item} ({Key}): {Moved} ms is below the {Minimum} ms minimum",
                     target.ItemName,
                     target.Key,
                     moved,
@@ -362,7 +365,7 @@ public class SyncOrchestrator
                 var miss = Math.Abs(drifting ? verdict.DriftMs!.Value : verdict.BestShiftMs ?? 0);
 
                 _logger.LogWarning(
-                    "Refused the sync for {Item} ({Key}): {Miss}ms off the speech, drifting {Drifting}, "
+                    "Rejected the sync for {Item} ({Key}): {Miss} ms off the speech, drifting {Drifting}, "
                     + "{Windows} windows, peak {Strength:F2}x",
                     target.ItemName,
                     target.Key,
@@ -374,8 +377,8 @@ public class SyncOrchestrator
                 return Fail(
                     record,
                     drifting
-                        ? $"The audio check refused this: it drifts across the film ({miss}ms)."
-                        : $"The audio check refused this: it is off the speech ({miss}ms).",
+                        ? $"Rejected: the audio check found the offset drifting across the runtime ({miss} ms)."
+                        : $"Rejected: the audio check found the subtitle out of alignment ({miss} ms).",
                     miss,
                     SubtitleStageKind.Verify);
             }
@@ -389,7 +392,7 @@ public class SyncOrchestrator
                 TryDelete(attempt.ProducedPath);
 
                 _logger.LogWarning(
-                    "Refused the sync for {Item} ({Key}): the audio check could not measure it and "
+                    "Rejected the sync for {Item} ({Key}): the audio check could not measure it and "
                     + "the engine scored its own alignment at {Confidence:F1} a second",
                     target.ItemName,
                     target.Key,
@@ -397,8 +400,8 @@ public class SyncOrchestrator
 
                 return Fail(
                     record,
-                    "The audio check could not measure this title, and the engine found no real "
-                    + "alignment either.",
+                    "Rejected: the audio check could not measure this title and the sync engine "
+                    + "found no usable alignment.",
                     null,
                     SubtitleStageKind.Verify);
             }
@@ -412,7 +415,7 @@ public class SyncOrchestrator
             if (placement is null)
             {
                 TryDelete(finalPath);
-                return Fail(record, "Could not write the synced subtitle into the library.");
+                return Fail(record, "Failed: the synced subtitle could not be written into the library.");
             }
 
             record.OutputPath = placement.OutputPath;
@@ -483,7 +486,10 @@ public class SyncOrchestrator
 
         if (string.IsNullOrEmpty(source) || !File.Exists(source))
         {
-            return FailStage(record, "Could not read the image subtitle track.", SubtitleStageKind.Convert);
+            return FailStage(
+                record,
+                "Failed: the image subtitle track could not be read.",
+                SubtitleStageKind.Convert);
         }
 
         var output = Track(scratch, ScratchPath(".srt"))!;
@@ -911,7 +917,9 @@ public class SyncOrchestrator
         record.RejectedOffsetMs = rejectedOffsetMs;
         record.AppliedOffsetMs = null;
         record.SkippedMovementMs = null;
-        record.Message = string.IsNullOrWhiteSpace(message) ? "Sync failed." : message;
+        record.Message = string.IsNullOrWhiteSpace(message)
+            ? "Failed: the sync did not complete."
+            : message;
         _logger.LogWarning("Sync failed for {Item}: {Message}", record.ItemName, record.Message);
         SafeUpsert(record, kind);
         return record;
@@ -924,7 +932,9 @@ public class SyncOrchestrator
         record.RejectedOffsetMs = null;
         record.AppliedOffsetMs = null;
         record.SkippedMovementMs = null;
-        record.Message = string.IsNullOrWhiteSpace(message) ? "The OCR step failed." : message;
+        record.Message = string.IsNullOrWhiteSpace(message)
+            ? "Failed: the OCR step did not complete."
+            : message;
         _logger.LogWarning("{Kind} failed for {Item}: {Message}", kind, record.ItemName, record.Message);
         SafeUpsert(record, kind);
         return null;

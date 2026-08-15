@@ -214,7 +214,8 @@ public class SubtitleDiscoveryService
         }
         else if (!SupportedExtensions.Contains(extension))
         {
-            target.UnsupportedReason = $"The sync engine does not read {extension} subtitles.";
+            target.UnsupportedReason =
+                $"Unsupported: the sync engine does not read {extension} subtitles.";
         }
         else if (!SubtitleContent.HasCues(path))
         {

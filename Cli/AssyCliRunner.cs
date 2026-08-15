@@ -95,7 +95,7 @@ public class AssyCliRunner : IAssyCliRunner
     private static AssyInvocationResult ConfigUnavailableResult() => new()
     {
         ExitCode = 2,
-        StandardError = "The assy-cli configuration file could not be written."
+        StandardError = "Failed: the assy-cli configuration file could not be written."
     };
 
     private async Task<AssyInvocationResult> RunAsync(
