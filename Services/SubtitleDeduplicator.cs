@@ -45,7 +45,9 @@ public class SubtitleDeduplicator
 
             foreach (var candidate in group)
             {
-                if (ReferenceEquals(candidate, keeper))
+                // ! Identity is not enough; the keeper's own file must never be the candidate.
+                if (ReferenceEquals(candidate, keeper)
+                    || string.Equals(candidate.Path, keeper.Path, StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }
@@ -102,6 +104,10 @@ public class SubtitleDeduplicator
         var slots = new Dictionary<SubtitleSlot, List<Candidate>>();
         var poisoned = new HashSet<SubtitleSlot>();
 
+        // ! One entry per file. Two targets can name the same sidecar, and a group holding it
+        //   twice deletes it as its own duplicate.
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         foreach (var target in targets)
         {
             var slot = new SubtitleSlot(
@@ -115,6 +121,11 @@ public class SubtitleDeduplicator
             if (candidate is null)
             {
                 poisoned.Add(slot);
+                continue;
+            }
+
+            if (!seen.Add(candidate.Path))
+            {
                 continue;
             }
 

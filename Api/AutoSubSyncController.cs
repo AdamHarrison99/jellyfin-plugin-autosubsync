@@ -24,6 +24,7 @@ public class AutoSubSyncController : ControllerBase
     private readonly SyncOrchestrator _orchestrator;
     private readonly SyncQueue _queue;
     private readonly RollbackService _rollback;
+    private readonly ItemChangeGate _gate;
     private readonly AssyRuntime _runtime;
     private readonly SeConvRuntime _seConv;
     private readonly ILogger<AutoSubSyncController> _logger;
@@ -35,6 +36,7 @@ public class AutoSubSyncController : ControllerBase
         SyncOrchestrator orchestrator,
         SyncQueue queue,
         RollbackService rollback,
+        ItemChangeGate gate,
         AssyRuntime runtime,
         SeConvRuntime seConv,
         ILogger<AutoSubSyncController> logger)
@@ -45,6 +47,7 @@ public class AutoSubSyncController : ControllerBase
         _orchestrator = orchestrator;
         _queue = queue;
         _rollback = rollback;
+        _gate = gate;
         _runtime = runtime;
         _seConv = seConv;
         _logger = logger;
@@ -191,6 +194,9 @@ public class AutoSubSyncController : ControllerBase
                     await _orchestrator.ProcessAsync(target, config, CancellationToken.None).ConfigureAwait(false);
                 }
 
+                // ! Closes the item against the refresh these writes queue, as both other
+                //   entry points do. Without it a manual sync costs a second pass.
+                _gate.Commit(item, config);
                 _store.Flush();
             }
             catch (Exception ex)

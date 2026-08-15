@@ -19,6 +19,7 @@ public class LibraryEventHandler : IHostedService, IDisposable
     private readonly SyncOrchestrator _orchestrator;
     private readonly SubtitleDeduplicator _deduplicator;
     private readonly LibraryScopeResolver _scopeResolver;
+    private readonly ItemChangeGate _gate;
     private readonly AssyRuntime _runtime;
     private readonly ILogger<LibraryEventHandler> _logger;
 
@@ -32,6 +33,7 @@ public class LibraryEventHandler : IHostedService, IDisposable
         SyncOrchestrator orchestrator,
         SubtitleDeduplicator deduplicator,
         LibraryScopeResolver scopeResolver,
+        ItemChangeGate gate,
         AssyRuntime runtime,
         ILogger<LibraryEventHandler> logger)
     {
@@ -40,6 +42,7 @@ public class LibraryEventHandler : IHostedService, IDisposable
         _orchestrator = orchestrator;
         _deduplicator = deduplicator;
         _scopeResolver = scopeResolver;
+        _gate = gate;
         _runtime = runtime;
         _logger = logger;
     }
@@ -92,6 +95,14 @@ public class LibraryEventHandler : IHostedService, IDisposable
                 return;
             }
 
+            // ! Before anything that reads the media filesystem. Most refreshes reach here with
+            //   nothing to do, including the ones this plugin's own writes provoked.
+            if (!_gate.HasWorkToDo(item, config))
+            {
+                _logger.LogDebug("{Name} was refreshed but nothing it depends on changed", item.Name);
+                return;
+            }
+
             // ! Readiness is checked before discovery; a missing payload must not write records.
             var status = await _runtime.EnsureReadyAsync(_shutdownCts.Token).ConfigureAwait(false);
             if (!status.IsReady)
@@ -110,6 +121,7 @@ public class LibraryEventHandler : IHostedService, IDisposable
             }
 
             _deduplicator.ProcessItem(item.Id, targets, config);
+            _gate.Commit(item, config);
         }
         catch (OperationCanceledException)
         {

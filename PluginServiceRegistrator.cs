@@ -33,6 +33,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<SubtitlePlacer>();
 
         serviceCollection.AddSingleton<LibraryScopeResolver>();
+        serviceCollection.AddSingleton<ItemChangeGate>();
         serviceCollection.AddSingleton<AdaptiveConcurrency>();
         serviceCollection.AddSingleton<SyncQueue>();
         serviceCollection.AddSingleton<SyncOrchestrator>();

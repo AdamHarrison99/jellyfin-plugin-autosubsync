@@ -29,9 +29,12 @@ public class SyncQueue : IDisposable
         long referenceBytes,
         CancellationToken cancellationToken)
     {
-        var level = ApplyLimit();
+        ApplyLimit();
 
         await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+        // ! The level in effect at admission, which is the one this run ran under.
+        var level = ResolveLimit();
 
         // ! The count on admission, which is the concurrency this run actually saw.
         var observed = Interlocked.Increment(ref _inFlight);

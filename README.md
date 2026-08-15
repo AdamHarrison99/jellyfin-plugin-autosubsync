@@ -110,6 +110,17 @@ Works seamlessly with the [Jellyfin OpenSubtitles Plugin](https://github.com/jel
 Files the plugin writes carry an `autosubsync` marker in their filename, which is how it
 recognizes its own output and how rollback knows what it may delete.
 
+### Changing a setting later
+
+**Settings apply to what has already been processed.** A subtitle is normally synced once and then
+left alone until it or its video changes — but changing a setting that would have produced a
+different result puts the affected subtitles back in the queue on the next run. Lower the minimum
+offset and the subtitles that were previously left alone for moving too little are re-examined;
+raise the maximum and the results that were rejected as too large are retried. Turning off dry run,
+turning on hearing-impaired removal or OCR, or changing the write mode, output encoding or marker
+does the same. Concurrency and the timeout change nothing about the output, so they reprocess
+nothing.
+
 ## Undoing everything
 
 Overwritten subtitles are backed up in the plugin's data folder, not beside your media.

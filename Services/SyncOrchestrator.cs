@@ -136,6 +136,7 @@ public class SyncOrchestrator
         try
         {
             StampStage(record, kind);
+            record.SettingsStamp = Plugin.Instance?.Configuration.OutcomeStamp();
             _store.Upsert(record);
         }
         catch (Exception ex)
@@ -187,9 +188,23 @@ public class SyncOrchestrator
         try
         {
             // ! Must precede extraction.
-            if (IsStillCurrent(record, target, target.SubtitlePath))
+            if (IsStillCurrent(record, target, target.SubtitlePath, config))
             {
                 _logger.LogDebug("{Item} ({Key}) is unchanged since the last sync", target.ItemName, target.Key);
+                return record;
+            }
+
+            // ! A sidecar removed since the last scan has nothing to hand the engine.
+            if (target.Origin == SubtitleOrigin.External
+                && target.SubtitlePath is { } source
+                && !File.Exists(source))
+            {
+                record.Status = SyncStatus.Skipped;
+                record.AppliedOffsetMs = null;
+                record.SkippedMovementMs = null;
+                record.Message = "The subtitle file is no longer on disk.";
+                _logger.LogDebug("{Item} ({Key}) is gone from disk", target.ItemName, target.Key);
+                SafeUpsert(record);
                 return record;
             }
 
@@ -266,6 +281,7 @@ public class SyncOrchestrator
                 TryDelete(attempt.ProducedPath);
                 record.Status = SyncStatus.Skipped;
                 record.AppliedOffsetMs = change.ConstantMs;
+                record.SkippedMovementMs = moved;
                 record.Message = $"Already in sync ({moved}ms, under the {config.MinimumOffsetMs}ms minimum).";
                 _logger.LogInformation(
                     "Left {Item} ({Key}) alone: {Moved}ms is under the {Minimum}ms minimum",
@@ -301,6 +317,7 @@ public class SyncOrchestrator
 
             record.Status = SyncStatus.Synced;
             record.AppliedOffsetMs = change.ConstantMs;
+            record.SkippedMovementMs = null;
             record.Message = null;
             SafeUpsert(record);
 
@@ -604,13 +621,20 @@ public class SyncOrchestrator
         }
     }
 
-    internal static bool IsStillCurrent(SyncRecord record, SubtitleTarget target, string? subtitlePath)
+    internal static bool IsStillCurrent(
+        SyncRecord record,
+        SubtitleTarget target,
+        string? subtitlePath,
+        PluginConfiguration config)
         => (record.Status == SyncStatus.Synced || record.Status == SyncStatus.Skipped)
+           && SettingsUnchanged(record, config)
+           && !MinimumWouldNowSync(record, config)
            && FingerprintMatches(record, target, subtitlePath);
 
     // ! The engine ran already. Identical inputs fail identically; only a change retries.
     internal static bool IsExhausted(SyncRecord record, SubtitleTarget target, PluginConfiguration config)
         => record.Status == SyncStatus.Failed
+           && SettingsUnchanged(record, config)
            && !LimitWouldNowAccept(record, config)
            && FingerprintMatches(record, target, target.SubtitlePath);
 
@@ -618,6 +642,16 @@ public class SyncOrchestrator
     private static bool LimitWouldNowAccept(SyncRecord record, PluginConfiguration config)
         => record.RejectedOffsetMs is { } rejected
            && (config.MaximumOffsetMs <= 0 || rejected <= config.MaximumOffsetMs);
+
+    // ! The mirror of the rejection rule. Lowering the minimum has to retry what it skipped.
+    private static bool MinimumWouldNowSync(SyncRecord record, PluginConfiguration config)
+        => record.Status == SyncStatus.Skipped
+           && (record.SkippedMovementMs ?? record.AppliedOffsetMs) is { } moved
+           && (config.MinimumOffsetMs <= 0 || moved >= config.MinimumOffsetMs);
+
+    // An unstamped record predates stamping and is taken at face value.
+    private static bool SettingsUnchanged(SyncRecord record, PluginConfiguration config)
+        => record.SettingsStamp is null || record.SettingsStamp == config.OutcomeStamp();
 
     private static bool FingerprintMatches(SyncRecord record, SubtitleTarget target, string? subtitlePath)
     {
@@ -695,6 +729,7 @@ public class SyncOrchestrator
         record.Status = SyncStatus.Failed;
         record.RejectedOffsetMs = rejectedOffsetMs;
         record.AppliedOffsetMs = null;
+        record.SkippedMovementMs = null;
         record.Message = string.IsNullOrWhiteSpace(message) ? "Sync failed." : message;
         _logger.LogWarning("Sync failed for {Item}: {Message}", record.ItemName, record.Message);
         SafeUpsert(record);
@@ -707,6 +742,7 @@ public class SyncOrchestrator
         record.Status = SyncStatus.Failed;
         record.RejectedOffsetMs = null;
         record.AppliedOffsetMs = null;
+        record.SkippedMovementMs = null;
         record.Message = string.IsNullOrWhiteSpace(message) ? "The OCR step failed." : message;
         _logger.LogWarning("{Kind} failed for {Item}: {Message}", kind, record.ItemName, record.Message);
         SafeUpsert(record, kind);

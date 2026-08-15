@@ -52,6 +52,13 @@ public class SyncRecord
     // How far the engine moved the subtitle, on a run that was kept. Null if the timings would not parse.
     public long? AppliedOffsetMs { get; set; }
 
+    // ! Set only when MinimumOffsetMs skipped a result. Lowering that minimum retries the record.
+    public long? SkippedMovementMs { get; set; }
+
+    // ! The output settings this outcome was produced under. Null means a record from before
+    //   stamping; it is read as current so an upgrade re-syncs nothing.
+    public string? SettingsStamp { get; set; }
+
     // Both fingerprints must still match for a target to be skipped.
     public long SourceLength { get; set; }
 

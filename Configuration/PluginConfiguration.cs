@@ -74,6 +74,18 @@ public class PluginConfiguration : BasePluginConfiguration
 
     public bool RefreshItemAfterSync { get; set; } = true;
 
+    // ! Every setting that changes what gets written; throttling settings are absent by design.
+    //   A record stamped with anything else is stale and runs again.
+    public string OutcomeStamp()
+        => string.Join(
+            '|',
+            DryRunMode ? "dry" : "live",
+            RemoveHearingImpairedTags ? "hi-" : "hi+",
+            ConvertImageSubtitles ? "ocr+" : "ocr-",
+            ExternalWriteMode,
+            OutputEncoding,
+            MarkerSuffix);
+
     // Resolves AutoConcurrency to a real thread count.
     public int ResolveMaxConcurrentSyncs()
         => MaxConcurrentSyncs > 0

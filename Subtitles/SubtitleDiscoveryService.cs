@@ -47,6 +47,10 @@ public class SubtitleDiscoveryService
 
         var candidates = new List<Candidate>();
 
+        // ! One candidate per file. Jellyfin can name the same sidecar twice, and a VobSub pair
+        //   arrives as two streams that resolve to one payload.
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         foreach (var stream in streams)
         {
             if (!PassesLanguageFilter(stream.Language, config))
@@ -57,6 +61,12 @@ public class SubtitleDiscoveryService
             var candidate = BuildCandidate(item, stream, config);
             if (candidate is null)
             {
+                continue;
+            }
+
+            if (candidate.Target.SubtitlePath is { } path && !seen.Add(path))
+            {
+                _logger.LogDebug("{Item}: {Path} was offered more than once", item.Name, path);
                 continue;
             }
 
@@ -170,8 +180,10 @@ public class SubtitleDiscoveryService
             return null;
         }
 
+        var path = ResolveSidecarPath(stream.Path);
+
         // Never re-sync our own output, and never let it occupy a slot.
-        if (SubtitleNaming.IsPluginOutput(stream.Path, config.MarkerSuffix))
+        if (SubtitleNaming.IsPluginOutput(path, config.MarkerSuffix))
         {
             return null;
         }
@@ -182,17 +194,17 @@ public class SubtitleDiscoveryService
             ItemName = item.Name,
             VideoPath = item.Path,
             Origin = SubtitleOrigin.External,
-            SubtitlePath = stream.Path,
+            SubtitlePath = path,
             Language = stream.Language,
             Codec = stream.Codec,
             IsForced = stream.IsForced,
             IsHearingImpaired = stream.IsHearingImpaired,
             Title = stream.Title,
-            Key = SubtitleTarget.ExternalKey(item.Path, stream.Path)
+            Key = SubtitleTarget.ExternalKey(item.Path, path)
         };
 
-        var extension = Path.GetExtension(stream.Path);
-        var imageLabel = ImageSidecarLabel(stream.Path, extension);
+        var extension = Path.GetExtension(path);
+        var imageLabel = ImageSidecarLabel(path, extension);
         var isImage = imageLabel is not null;
 
         // ! Image first. A bitmap sidecar must never reach the cue check or the sync engine.
@@ -204,14 +216,27 @@ public class SubtitleDiscoveryService
         {
             target.UnsupportedReason = $"The sync engine does not read {extension} subtitles.";
         }
-        else if (!SubtitleContent.HasCues(stream.Path))
+        else if (!SubtitleContent.HasCues(path))
         {
-            _logger.LogDebug("{Item}: skipping {Path}, it holds no cues", item.Name, stream.Path);
+            _logger.LogDebug("{Item}: skipping {Path}, it holds no cues", item.Name, path);
             return null;
         }
 
         var rank = isImage ? SubtitleSourceRank.ExternalImage : SubtitleSourceRank.ExternalText;
         return new Candidate(target, rank, IsExternal: true);
+    }
+
+    // ! A VobSub pair is one track, and only its payload half carries bitmaps to OCR.
+    //   Jellyfin names either half, so both have to land on the same file.
+    internal static string ResolveSidecarPath(string path)
+    {
+        if (!string.Equals(Path.GetExtension(path), ".idx", StringComparison.OrdinalIgnoreCase))
+        {
+            return path;
+        }
+
+        var payload = Path.ChangeExtension(path, ".sub");
+        return File.Exists(payload) ? payload : path;
     }
 
     // ! An image track only stops being unsupported when OCR is enabled; without that the

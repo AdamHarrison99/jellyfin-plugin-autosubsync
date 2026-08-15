@@ -14,6 +14,7 @@ public class FullLibrarySyncTask : IScheduledTask
     private readonly SubtitleDiscoveryService _discovery;
     private readonly SyncOrchestrator _orchestrator;
     private readonly SubtitleDeduplicator _deduplicator;
+    private readonly ItemChangeGate _gate;
     private readonly ISyncStore _store;
     private readonly BackupVault _vault;
     private readonly AssyRuntime _runtime;
@@ -25,6 +26,7 @@ public class FullLibrarySyncTask : IScheduledTask
         SubtitleDiscoveryService discovery,
         SyncOrchestrator orchestrator,
         SubtitleDeduplicator deduplicator,
+        ItemChangeGate gate,
         ISyncStore store,
         BackupVault vault,
         AssyRuntime runtime,
@@ -35,6 +37,7 @@ public class FullLibrarySyncTask : IScheduledTask
         _discovery = discovery;
         _orchestrator = orchestrator;
         _deduplicator = deduplicator;
+        _gate = gate;
         _store = store;
         _vault = vault;
         _runtime = runtime;
@@ -109,6 +112,9 @@ public class FullLibrarySyncTask : IScheduledTask
 
                     _deduplicator.ProcessItem(item.Id, targets, config);
 
+                    // ! Closes the item against the refresh its own writes just queued.
+                    _gate.Commit(item, config);
+
                     progress.Report((double)Interlocked.Increment(ref done) / items.Count * 100);
                 })
                 .ConfigureAwait(false);
@@ -145,6 +151,7 @@ public class FullLibrarySyncTask : IScheduledTask
         foreach (var record in orphaned)
         {
             _vault.Discard(record.Id);
+            _gate.Forget(record.ItemId);
         }
 
         _store.RemoveMany(orphaned.Select(r => r.Id));
