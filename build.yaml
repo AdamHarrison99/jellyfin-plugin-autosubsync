@@ -1,6 +1,6 @@
 name: "AutoSubSync"
 guid: "6dbc32c5-1c68-481e-b066-9521552a2615"
-version: "1.2.4.0"
+version: "1.2.5.0"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 overview: "Automatically synchronizes external and embedded subtitles across your library."
@@ -17,12 +17,7 @@ owner: "AdamHarrison99"
 artifacts:
   - "Jellyfin.Plugin.AutoSubSync.dll"
 changelog: |
-  - Every subtitle is now scored against the video's own audio, before and after syncing
-  - A subtitle the audio already agrees with is left alone and never handed to the engine
-  - A result the audio disagrees with is discarded instead of written to your library
-  - Results produced before 1.2.4.0 were never checked against the audio; if any of them are wrong,
-    Roll back everything restores your originals
-  - Maximum offset and Minimum offset are gone; the audio check decides what is acceptable
-  - Automatic sync on new media and refresh after sync now default to off
-  - Duplicate removal renames the surviving subtitle back to its plain name, and rollback undoes it
-  - The status panel separates subtitles refused by the audio check from failures
+  - The audio check no longer refuses subtitles it could not actually measure
+  - A sync the engine finished is now kept even when the engine crashes reporting the result
+  - A subtitle the audio check cannot measure is refused only if the engine found no alignment either
+  - Audio check refusals are grouped into readable rows in the log

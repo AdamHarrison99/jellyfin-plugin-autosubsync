@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.2.5.0",
+        "changelog": "The audio check no longer refuses subtitles it could not actually measure. A sync the engine finished is now kept even when the engine crashes reporting the result, and a subtitle the audio check cannot measure is refused only if the sync engine found no alignment either. Audio check refusals are grouped into readable rows in the log.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-autosubsync/releases/download/v1.2.5.0/autosubsync-v1.2.5.0.zip",
+        "checksum": "de7fb6366762d09e13bed4b5eabca304",
+        "timestamp": "2026-08-15T22:33:26Z"
+      },
+      {
         "version": "1.2.4.0",
         "changelog": "Every subtitle is now scored against the video's own audio, before and after syncing. A subtitle the audio already agrees with is left alone and never handed to the engine, and a result the audio disagrees with is discarded instead of written to your library. Results produced before 1.2.4.0 were never checked against the audio; if any of them are wrong, Roll back everything restores your originals. Maximum offset and Minimum offset are gone, automatic sync on new media and refresh after sync now default to off, and the status panel separates subtitles refused by the audio check from failures.",
         "targetAbi": "10.11.0.0",
