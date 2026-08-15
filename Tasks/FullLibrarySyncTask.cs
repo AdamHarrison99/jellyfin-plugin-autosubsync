@@ -74,25 +74,44 @@ public class FullLibrarySyncTask : IScheduledTask
         progress.Report(0);
 
         var items = _scopeResolver.GetItemsInScope(config);
-        _logger.LogInformation("AutoSubSync full scan starting over {Count} items", items.Count);
+
+        // ! The ceiling the queue could ever admit. Offering more only parks threads on it.
+        var parallelism = Math.Clamp(config.ResolveMaxConcurrentSyncs(), 1, SyncQueue.HardMax);
+
+        _logger.LogInformation(
+            "AutoSubSync full scan starting over {Count} items, up to {Parallelism} at a time",
+            items.Count,
+            parallelism);
+
+        var options = new ParallelOptions
+        {
+            MaxDegreeOfParallelism = parallelism,
+            CancellationToken = cancellationToken
+        };
+
+        var done = 0;
 
         try
         {
-            for (var i = 0; i < items.Count; i++)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                var targets = _discovery.Discover(items[i], config);
-
-                foreach (var target in targets)
+            // ! One item per worker, its own targets in order. SyncQueue is still the gate that
+            //   decides how many engines run.
+            await Parallel.ForEachAsync(
+                items,
+                options,
+                async (item, ct) =>
                 {
-                    await _orchestrator.ProcessAsync(target, config, cancellationToken).ConfigureAwait(false);
-                }
+                    var targets = _discovery.Discover(item, config);
 
-                _deduplicator.ProcessItem(items[i].Id, targets, config);
+                    foreach (var target in targets)
+                    {
+                        await _orchestrator.ProcessAsync(target, config, ct).ConfigureAwait(false);
+                    }
 
-                progress.Report((double)(i + 1) / items.Count * 100);
-            }
+                    _deduplicator.ProcessItem(item.Id, targets, config);
+
+                    progress.Report((double)Interlocked.Increment(ref done) / items.Count * 100);
+                })
+                .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {

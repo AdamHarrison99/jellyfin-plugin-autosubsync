@@ -19,6 +19,7 @@ public class AdaptiveConcurrency
     private int _level = 1;
     private int _samples;
     private double _sumMsPerGigabyte;
+    private double _sumObserved;
 
     private int _step = 1;
     private int _measuredLevel;
@@ -50,9 +51,15 @@ public class AdaptiveConcurrency
     }
 
     // Wall time under the semaphore, against the bytes that had to be read to earn it.
-    public void Report(int levelInEffect, long elapsedMs, long referenceBytes, int ceiling)
+    // ! observedConcurrency is what actually ran, not what was permitted.
+    public void Report(
+        int levelInEffect,
+        long elapsedMs,
+        long referenceBytes,
+        int ceiling,
+        int observedConcurrency)
     {
-        if (elapsedMs <= 0 || referenceBytes <= 0)
+        if (elapsedMs <= 0 || referenceBytes <= 0 || observedConcurrency <= 0)
         {
             return;
         }
@@ -75,6 +82,7 @@ public class AdaptiveConcurrency
 
             _samples++;
             _sumMsPerGigabyte += elapsedMs / (referenceBytes / BytesPerGigabyte);
+            _sumObserved += Math.Min(observedConcurrency, _level);
 
             if (_samples < SamplesPerLevel)
             {
@@ -87,7 +95,7 @@ public class AdaptiveConcurrency
 
     private void Decide(int ceiling)
     {
-        var throughput = _level / (_sumMsPerGigabyte / _samples);
+        var throughput = (_sumObserved / _samples) / (_sumMsPerGigabyte / _samples);
         var previousLevel = _measuredLevel;
         var previousThroughput = _measuredThroughput;
 
@@ -171,5 +179,6 @@ public class AdaptiveConcurrency
     {
         _samples = 0;
         _sumMsPerGigabyte = 0;
+        _sumObserved = 0;
     }
 }

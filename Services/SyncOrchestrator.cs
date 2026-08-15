@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using Jellyfin.Plugin.AutoSubSync.Cli;
 using Jellyfin.Plugin.AutoSubSync.Configuration;
 using Jellyfin.Plugin.AutoSubSync.Data;
@@ -16,6 +16,11 @@ namespace Jellyfin.Plugin.AutoSubSync.Services;
 public class SyncOrchestrator
 {
     private const string SeConvToolName = "seconv";
+
+    // ! Admits every framerate conversion in use; 23.976 to 30 is the widest at 25.1%.
+    private const double MaximumRateDrift = 0.30;
+
+    private const long MinimumSpanMs = 60_000;
 
     private readonly IAssyCliRunner _runner;
     private readonly ISubtitleExtractor _extractor;
@@ -118,6 +123,7 @@ public class SyncOrchestrator
             _logger.LogError(ex, "Unhandled error syncing {Item} ({Key})", target.ItemName, target.Key);
             record.Status = SyncStatus.Failed;
             record.RejectedOffsetMs = null;
+            record.AppliedOffsetMs = null;
             record.Message = ex.Message;
             SafeUpsert(record);
             return record;
@@ -234,23 +240,39 @@ public class SyncOrchestrator
                 return Fail(record, attempt.Message);
             }
 
-            var bounded = config.MaximumOffsetMs > 0 || config.MinimumOffsetMs > 0;
-            var shift = bounded ? MeasureShift(inputPath, attempt.ProducedPath) : null;
+            var change = MeasureChange(inputPath, attempt.ProducedPath);
 
-            if (config.MaximumOffsetMs > 0 && shift > config.MaximumOffsetMs)
+            if (config.MaximumOffsetMs > 0 && change.ConstantMs > config.MaximumOffsetMs)
             {
                 TryDelete(attempt.ProducedPath);
                 return Fail(
                     record,
-                    $"The engine moved the subtitle by {shift}ms, past the {config.MaximumOffsetMs}ms limit.",
-                    shift);
+                    $"The engine moved the subtitle by {change.ConstantMs}ms, past the {config.MaximumOffsetMs}ms limit.",
+                    change.ConstantMs);
             }
 
-            if (config.MinimumOffsetMs > 0 && shift < config.MinimumOffsetMs)
+            if (change.RateRatio is { } ratio && Math.Abs(ratio - 1) > MaximumRateDrift)
+            {
+                TryDelete(attempt.ProducedPath);
+                return Fail(
+                    record,
+                    $"The engine rescaled the subtitle by {ratio:P1}, which is no framerate conversion.");
+            }
+
+            var moved = Math.Max(change.ConstantMs ?? 0, change.DriftMs ?? 0);
+
+            if (config.MinimumOffsetMs > 0 && change.ConstantMs is not null && moved < config.MinimumOffsetMs)
             {
                 TryDelete(attempt.ProducedPath);
                 record.Status = SyncStatus.Skipped;
-                record.Message = $"Already in sync (shift under {config.MinimumOffsetMs}ms).";
+                record.AppliedOffsetMs = change.ConstantMs;
+                record.Message = $"Already in sync ({moved}ms, under the {config.MinimumOffsetMs}ms minimum).";
+                _logger.LogInformation(
+                    "Left {Item} ({Key}) alone: {Moved}ms is under the {Minimum}ms minimum",
+                    target.ItemName,
+                    target.Key,
+                    moved,
+                    config.MinimumOffsetMs);
                 SafeUpsert(record);
                 return record;
             }
@@ -278,8 +300,19 @@ public class SyncOrchestrator
             }
 
             record.Status = SyncStatus.Synced;
+            record.AppliedOffsetMs = change.ConstantMs;
             record.Message = null;
             SafeUpsert(record);
+
+            _logger.LogInformation(
+                "Synced {Item} ({Key}): shifted {Shift}, rate correction {Drift}, {Elapsed}ms, wrote {Path} ({Provenance})",
+                target.ItemName,
+                target.Key,
+                Describe(change.ConstantMs),
+                Describe(change.DriftMs),
+                record.ElapsedMs,
+                placement.OutputPath,
+                placement.Provenance);
 
             if (config.RefreshItemAfterSync)
             {
@@ -308,8 +341,9 @@ public class SyncOrchestrator
 
         if (await _seConv.EnsureOcrReadyAsync(cancellationToken).ConfigureAwait(false) is { } unavailable)
         {
-            record.Status = SyncStatus.Unsupported;
-            record.Message = unavailable;
+            // ! Downloading is not unsupported. Pending leaves the target for the next sweep.
+            record.Status = unavailable.IsTransient ? SyncStatus.Pending : SyncStatus.Unsupported;
+            record.Message = unavailable.Message;
             SafeUpsert(record, SubtitleStageKind.Convert);
             return null;
         }
@@ -367,7 +401,7 @@ public class SyncOrchestrator
         // ! Checked only once the file is known to need it; the converter is a large download.
         if (await _seConv.EnsureConverterReadyAsync(cancellationToken).ConfigureAwait(false) is { } unavailable)
         {
-            RecordStage(record, SubtitleStageKind.Transform, StageOutcome.Skipped, unavailable, 0);
+            RecordStage(record, SubtitleStageKind.Transform, StageOutcome.Skipped, unavailable.Message, 0);
             return syncedPath;
         }
 
@@ -604,28 +638,43 @@ public class SyncOrchestrator
                && record.SourceSha256 == FileFingerprint.TryComputeFull(subtitlePath);
     }
 
-    // Null on unparseable timings, which leaves both bounds untested and keeps the result.
-    // ! Both ends: a rate correction can move the last cue by minutes and the first by nothing.
-    private static long? MeasureShift(string inputPath, string outputPath)
+    private static string Describe(long? ms) => ms is { } value ? $"{value}ms" : "an unmeasured amount";
+
+    // What the engine did, split in two: a constant move, and a change of span from rate correction.
+    private readonly record struct OffsetChange(long? ConstantMs, long? DriftMs, double? RateRatio);
+
+    // Null members leave their bound untested and keep the result.
+    private static OffsetChange MeasureChange(string inputPath, string outputPath)
     {
-        var atStart = Delta(
-            SubtitleOffsetProbe.TryGetFirstCueMs(inputPath),
-            SubtitleOffsetProbe.TryGetFirstCueMs(outputPath));
+        var firstBefore = SubtitleOffsetProbe.TryGetFirstCueMs(inputPath);
+        var firstAfter = SubtitleOffsetProbe.TryGetFirstCueMs(outputPath);
 
-        var atEnd = Delta(
-            SubtitleOffsetProbe.TryGetLastCueMs(inputPath),
-            SubtitleOffsetProbe.TryGetLastCueMs(outputPath));
+        var constant = firstBefore is null || firstAfter is null
+            ? (long?)null
+            : Math.Abs(firstAfter.Value - firstBefore.Value);
 
-        if (atStart is null)
+        var lastBefore = SubtitleOffsetProbe.TryGetLastCueMs(inputPath);
+        var lastAfter = SubtitleOffsetProbe.TryGetLastCueMs(outputPath);
+
+        if (firstBefore is null || firstAfter is null || lastBefore is null || lastAfter is null)
         {
-            return atEnd;
+            return new OffsetChange(constant, null, null);
         }
 
-        return atEnd is null ? atStart : Math.Max(atStart.Value, atEnd.Value);
-    }
+        var spanBefore = lastBefore.Value - firstBefore.Value;
+        var spanAfter = lastAfter.Value - firstAfter.Value;
 
-    private static long? Delta(long? before, long? after)
-        => before is null || after is null ? null : Math.Abs(after.Value - before.Value);
+        // ! Too short to read a rate off. A few seconds of cues make any ratio noise.
+        if (spanBefore < MinimumSpanMs)
+        {
+            return new OffsetChange(constant, null, null);
+        }
+
+        return new OffsetChange(
+            constant,
+            Math.Abs(spanAfter - spanBefore),
+            (double)spanAfter / spanBefore);
+    }
 
     private void QueueRefresh(Guid itemId)
     {
@@ -645,6 +694,7 @@ public class SyncOrchestrator
     {
         record.Status = SyncStatus.Failed;
         record.RejectedOffsetMs = rejectedOffsetMs;
+        record.AppliedOffsetMs = null;
         record.Message = string.IsNullOrWhiteSpace(message) ? "Sync failed." : message;
         _logger.LogWarning("Sync failed for {Item}: {Message}", record.ItemName, record.Message);
         SafeUpsert(record);
@@ -656,6 +706,7 @@ public class SyncOrchestrator
     {
         record.Status = SyncStatus.Failed;
         record.RejectedOffsetMs = null;
+        record.AppliedOffsetMs = null;
         record.Message = string.IsNullOrWhiteSpace(message) ? "The OCR step failed." : message;
         _logger.LogWarning("{Kind} failed for {Item}: {Message}", kind, record.ItemName, record.Message);
         SafeUpsert(record, kind);

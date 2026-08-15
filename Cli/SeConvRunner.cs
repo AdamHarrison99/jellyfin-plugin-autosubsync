@@ -27,17 +27,23 @@ public class SeConvRunner : ISeConvRunner
         _logger = logger;
     }
 
-    public async Task<string?> EnsureOcrReadyAsync(CancellationToken cancellationToken)
+    public async Task<ToolUnavailable?> EnsureOcrReadyAsync(CancellationToken cancellationToken)
     {
         var status = await _runtime.EnsureOcrReadyAsync(cancellationToken).ConfigureAwait(false);
-        return status.IsReady ? null : status.Message;
+        return Describe(status);
     }
 
-    public async Task<string?> EnsureConverterReadyAsync(CancellationToken cancellationToken)
+    public async Task<ToolUnavailable?> EnsureConverterReadyAsync(CancellationToken cancellationToken)
     {
         var status = await _runtime.EnsureConverterReadyAsync(cancellationToken).ConfigureAwait(false);
-        return status.IsReady ? null : status.Message;
+        return Describe(status);
     }
+
+    // ! A download in flight is the one reason worth coming back for.
+    private static ToolUnavailable? Describe(SeConvStatus status)
+        => status.IsReady
+            ? null
+            : new ToolUnavailable(status.Message, status.Readiness == PayloadReadiness.Fetching);
 
     public Task<SeConvResult> OcrAsync(
         string inputPath,

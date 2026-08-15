@@ -369,10 +369,9 @@
                         <label class="inputLabel" for="txtMaximumOffset">Maximum offset (ms)</label>
                         <input is="emby-input" type="number" id="txtMaximumOffset" min="0" />
                         <div class="fieldDescription">
-                            Reject a result that moves the subtitle more than this. A shift of
-                            several minutes usually means the sync latched onto the wrong audio, and
-                            writing it would replace a good subtitle with a worse one. Set to 0 to
-                            accept any shift.
+                            Reject a result that moves the subtitle more than this. A shift over a
+                            minute usually means the sync latched onto the wrong audio, and writing
+                            it would replace a good subtitle with a worse one. Set to 0 to accept any shift.
                         </div>
                     </div>
 
@@ -383,8 +382,9 @@
                         <label class="inputLabel" for="txtConcurrency">Concurrent syncs</label>
                         <input is="emby-input" type="number" id="txtConcurrency" min="0" max="8" />
                         <div class="fieldDescription">
-                            Each sync reads the whole video file to analyse its audio, so the limit
-                            is often your storage rather than your CPU.
+                            How many subtitles the full library scan, and new items as they arrive,
+                            are synced at once. Each sync reads the whole video file to analyse its
+                            audio, so the limit is often your storage rather than your CPU.
                             <strong>0 = automatic</strong>: starts at one, measures how much work
                             actually completes, and adds more only while that helps — never taking
                             more than half of your cores. Set a number to override it; on
@@ -559,10 +559,19 @@
                         (dependencies || []).map(dependencyRow).join('');
                 }
 
+                function formatOffset(ms) {
+                    if (ms === null || ms === undefined) {
+                        return '—';
+                    }
+
+                    return ms < 1000 ? ms + 'ms' : (ms / 1000).toFixed(1) + 's';
+                }
+
                 function renderCounts(page, status) {
                     page.querySelector('#statusCounts').innerHTML =
                         statCard(status.Total, 'tracks seen')
                         + statCard(status.Synced, 'synced')
+                        + statCard(formatOffset(status.MedianAppliedOffsetMs), 'median shift')
                         + statCard(status.Skipped, 'already in sync')
                         + statCard(status.Failed, 'failed', status.Failed ? 'isFailed' : '')
                         + statCard(status.Unsupported, 'unsupported')
@@ -718,7 +727,7 @@
                         config.LanguageAllowList = splitList(page.querySelector('#txtLanguages').value);
 
                         config.MinimumOffsetMs = readInt(page, '#txtMinimumOffset', 150, 0, 600000);
-                        config.MaximumOffsetMs = readInt(page, '#txtMaximumOffset', 120000, 0, 3600000);
+                        config.MaximumOffsetMs = readInt(page, '#txtMaximumOffset', 60000, 0, 3600000);
                         config.MaxConcurrentSyncs = readInt(page, '#txtConcurrency', 0, 0, 8);
 
                         config.AutoSyncOnItemAdded = page.querySelector('#chkAutoOnAdd').checked;

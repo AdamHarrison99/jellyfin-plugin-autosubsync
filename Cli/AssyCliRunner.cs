@@ -212,6 +212,13 @@ public class AssyCliRunner : IAssyCliRunner
         "SystemRoot", "windir", "COMSPEC", "PATHEXT", "NUMBER_OF_PROCESSORS", "USERPROFILE"
     ];
 
+    // ! Pinned to one thread each, so a queue permit costs about one core.
+    private static readonly string[] ThreadLimitVariables =
+    [
+        "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
+        "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"
+    ];
+
     // Allowlisted, not inherited.
     private void ApplyEnvironment(ProcessStartInfo startInfo)
     {
@@ -224,6 +231,12 @@ public class AssyCliRunner : IAssyCliRunner
             {
                 startInfo.Environment[name] = value;
             }
+        }
+
+        // ! Set after the pass-through, so an inherited value never wins.
+        foreach (var name in ThreadLimitVariables)
+        {
+            startInfo.Environment[name] = "1";
         }
 
         var encoderDir = Path.GetDirectoryName(_mediaEncoder.EncoderPath);

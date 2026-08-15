@@ -64,6 +64,7 @@ public class AutoSubSyncController : ControllerBase
             InFlight = _queue.InFlight,
             Total = records.Count,
             Synced = records.Count(r => r.Status == SyncStatus.Synced),
+            MedianAppliedOffsetMs = MedianAppliedOffset(records),
             Failed = records.Count(r => r.Status == SyncStatus.Failed),
             Skipped = records.Count(r => r.Status == SyncStatus.Skipped),
             DryRun = records.Count(r => r.Status == SyncStatus.DryRun),
@@ -80,6 +81,18 @@ public class AutoSubSyncController : ControllerBase
 
             LastRecordUpdateUtc = records.Count == 0 ? null : records.Max(r => (DateTime?)r.UpdatedUtc)
         });
+    }
+
+    // The typical correction, over runs whose result was kept. Null once nothing has been measured.
+    private static long? MedianAppliedOffset(List<SyncRecord> records)
+    {
+        var applied = records
+            .Where(r => r.Status == SyncStatus.Synced && r.AppliedOffsetMs is not null)
+            .Select(r => r.AppliedOffsetMs!.Value)
+            .Order()
+            .ToList();
+
+        return applied.Count == 0 ? null : applied[applied.Count / 2];
     }
 
     // ! Only what the settings ask for. A missing OCR tool is not a fault when OCR is off.

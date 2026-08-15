@@ -7,7 +7,7 @@ namespace Jellyfin.Plugin.AutoSubSync.Services;
 public class SyncQueue : IDisposable
 {
     // The ceiling the setting itself is clamped to.
-    private const int HardMax = 8;
+    internal const int HardMax = 8;
 
     private readonly object _lock = new();
     private readonly SemaphoreSlim _semaphore = new(HardMax, HardMax);
@@ -32,7 +32,9 @@ public class SyncQueue : IDisposable
         var level = ApplyLimit();
 
         await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
-        Interlocked.Increment(ref _inFlight);
+
+        // ! The count on admission, which is the concurrency this run actually saw.
+        var observed = Interlocked.Increment(ref _inFlight);
 
         var stopwatch = Stopwatch.StartNew();
 
@@ -42,7 +44,7 @@ public class SyncQueue : IDisposable
 
             // ! Only a run that finished normally says anything about throughput.
             stopwatch.Stop();
-            _adaptive.Report(level, stopwatch.ElapsedMilliseconds, referenceBytes, AutoCeiling());
+            _adaptive.Report(level, stopwatch.ElapsedMilliseconds, referenceBytes, AutoCeiling(), observed);
 
             return result;
         }

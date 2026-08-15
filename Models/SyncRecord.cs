@@ -49,6 +49,9 @@ public class SyncRecord
     // ! Set only when MaximumOffsetMs rejected a result. Raising that limit retries the record.
     public long? RejectedOffsetMs { get; set; }
 
+    // How far the engine moved the subtitle, on a run that was kept. Null if the timings would not parse.
+    public long? AppliedOffsetMs { get; set; }
+
     // Both fingerprints must still match for a target to be skipped.
     public long SourceLength { get; set; }
 

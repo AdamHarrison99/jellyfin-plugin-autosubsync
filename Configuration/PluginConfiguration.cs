@@ -56,7 +56,7 @@ public class PluginConfiguration : BasePluginConfiguration
     public int MinimumOffsetMs { get; set; } = 150;
 
     // ! A result past this is discarded, not written. 0 accepts any shift.
-    public int MaximumOffsetMs { get; set; } = 120_000;
+    public int MaximumOffsetMs { get; set; } = 60_000;
 
     // ---- Throttling ----
 
@@ -80,15 +80,9 @@ public class PluginConfiguration : BasePluginConfiguration
             ? MaxConcurrentSyncs
             : AutoConcurrencyFor(Environment.ProcessorCount);
 
+    // ! Half the cores, and never more. This is the ceiling to probe towards, not a starting point.
     internal static int AutoConcurrencyFor(int processorCount)
-    {
-        if (processorCount <= 4)
-        {
-            return 1;
-        }
-
-        return Math.Clamp(processorCount / 2, 1, 8);
-    }
+        => Math.Clamp(processorCount / 2, 1, 8);
 
     // Called on every save; the API accepts arbitrary JSON.
     public void Normalize()

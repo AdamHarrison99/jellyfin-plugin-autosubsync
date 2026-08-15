@@ -90,13 +90,13 @@ what it would have done.
 | --- | --- | --- |
 | Where to write synced external subtitles | Overwrite the original | Overwrite replaces the file in place, keeping its name, and always backs the original up first. Side-by-side leaves the original alone and writes a new marked file. Embedded tracks always become new files regardless. |
 | Minimum offset (ms) | `150` | Discard a result that moves the subtitle less than this. Stops the plugin rewriting subtitles that were already correct. Below roughly 150 ms a shift is imperceptible; above it, people notice. |
-| Maximum offset (ms) | `120000` | Reject a result that moves the subtitle more than this, and leave the original in place. A shift of several minutes usually means the sync latched onto the wrong audio. Set to 0 to accept any shift. |
+| Maximum offset (ms) | `60000` | Reject a result that shifts the subtitle more than this, and leave the original in place. A shift over a minute usually means the sync latched onto the wrong audio. Set to 0 to accept any shift. |
 
 ### Throttling
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| Concurrent syncs | `0` | Setting to 0 automatically starts at one, measures how much work actually completes, and adds more only while that helps, never taking more than a half of your cores. On network storage a lower number is usually faster, not slower. |
+| Concurrent syncs | `0` | How many subtitles are synced at once, both during the nightly full scan and as new items arrive. Setting to 0 automatically starts at one, measures how much work actually completes, and adds more only while that helps, never taking more than half of your cores. On network storage a lower number is usually faster, not slower. |
 
 ### Automation
 

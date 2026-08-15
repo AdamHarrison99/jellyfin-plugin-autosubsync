@@ -2,7 +2,12 @@ using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.AutoSubSync.Cli;
 
-public record SeConvStatus(bool IsReady, string? SeConvPath, string? TesseractDirectory, string Message);
+public record SeConvStatus(
+    bool IsReady,
+    string? SeConvPath,
+    string? TesseractDirectory,
+    string Message,
+    PayloadReadiness Readiness);
 
 // Resolves the OCR toolchain: the pinned converter, and the Tesseract the admin installed.
 public class SeConvRuntime : PayloadRuntime
@@ -40,8 +45,8 @@ public class SeConvRuntime : PayloadRuntime
         var payload = GetStatus();
 
         return payload.IsReady && payload.ExecutablePath is { } seconv
-            ? new SeConvStatus(true, seconv, ResolveTesseractDirectory(), payload.Message)
-            : new SeConvStatus(false, null, null, payload.Message);
+            ? new SeConvStatus(true, seconv, ResolveTesseractDirectory(), payload.Message, payload.Readiness)
+            : new SeConvStatus(false, null, null, payload.Message, payload.Readiness);
     }
 
     public SeConvStatus GetOcrStatus()
