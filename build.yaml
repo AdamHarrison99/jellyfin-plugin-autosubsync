@@ -1,6 +1,6 @@
 name: "AutoSubSync"
 guid: "6dbc32c5-1c68-481e-b066-9521552a2615"
-version: "1.2.3.0"
+version: "1.2.4.0"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 overview: "Automatically synchronizes external and embedded subtitles across your library."
@@ -17,8 +17,12 @@ owner: "AdamHarrison99"
 artifacts:
   - "Jellyfin.Plugin.AutoSubSync.dll"
 changelog: |
-  - Subtitles carrying a marker cue at the start are no longer rejected for a shift that never happened
-  - Rejections made by the old measurement are re-checked automatically after upgrading
-  - The same subtitle can no longer be synced twice at once by a scan and a library event
-  - A subtitle whose OCR failed is no longer retried on every scan
-  - Identical subtitle files on one item are now measured once instead of one engine run each
+  - Every subtitle is now scored against the video's own audio, before and after syncing
+  - A subtitle the audio already agrees with is left alone and never handed to the engine
+  - A result the audio disagrees with is discarded instead of written to your library
+  - Results produced before 1.2.4.0 were never checked against the audio; if any of them are wrong,
+    Roll back everything restores your originals
+  - Maximum offset and Minimum offset are gone; the audio check decides what is acceptable
+  - Automatic sync on new media and refresh after sync now default to off
+  - Duplicate removal renames the surviving subtitle back to its plain name, and rollback undoes it
+  - The status panel separates subtitles refused by the audio check from failures
