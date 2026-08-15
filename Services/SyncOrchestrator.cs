@@ -20,14 +20,13 @@ public class SyncOrchestrator
     // ! Admits every framerate conversion in use; 23.976 to 30 is the widest at 25.1%.
     private const double MaximumRateDrift = 0.30;
 
-    private const long MinimumSpanMs = 60_000;
-
     private readonly IAssyCliRunner _runner;
     private readonly ISubtitleExtractor _extractor;
     private readonly ImageSubtitleExtractor _imageExtractor;
     private readonly ISeConvRunner _seConv;
     private readonly ISyncStore _store;
     private readonly SyncQueue _queue;
+    private readonly TargetLocks _targets;
     private readonly ILibraryManager _libraryManager;
     private readonly IProviderManager _providerManager;
     private readonly IFileSystem _fileSystem;
@@ -42,6 +41,7 @@ public class SyncOrchestrator
         ISeConvRunner seConv,
         ISyncStore store,
         SyncQueue queue,
+        TargetLocks targets,
         ILibraryManager libraryManager,
         IProviderManager providerManager,
         IFileSystem fileSystem,
@@ -56,6 +56,7 @@ public class SyncOrchestrator
         _seConv = seConv;
         _store = store;
         _queue = queue;
+        _targets = targets;
         _libraryManager = libraryManager;
         _providerManager = providerManager;
         _fileSystem = fileSystem;
@@ -68,6 +69,11 @@ public class SyncOrchestrator
         PluginConfiguration config,
         CancellationToken cancellationToken)
     {
+        // ! Take the lease before reading the record; the read is only current while it is held.
+        using var lease = await _targets
+            .AcquireAsync(target.ItemId, target.Key, cancellationToken)
+            .ConfigureAwait(false);
+
         var record = _store.GetByTargetKey(target.ItemId, target.Key) ?? NewRecord(target);
 
         try
@@ -137,6 +143,7 @@ public class SyncOrchestrator
         {
             StampStage(record, kind);
             record.SettingsStamp = Plugin.Instance?.Configuration.OutcomeStamp();
+            record.MeasurementVersion = SyncRecord.CurrentMeasurementVersion;
             _store.Upsert(record);
         }
         catch (Exception ex)
@@ -208,6 +215,14 @@ public class SyncOrchestrator
                 return record;
             }
 
+            // ! Must precede every stage that can fail. IsExhausted needs this on a failed record.
+            CaptureFingerprint(record, target, target.SubtitlePath);
+
+            if (SettledTwin(record, target, config) is { } twin)
+            {
+                return Adopt(record, target, twin);
+            }
+
             string? inputPath;
 
             if (target.RequiresOcr)
@@ -234,9 +249,6 @@ public class SyncOrchestrator
                 }
             }
 
-            // ! Fingerprint the source, never a converted copy; the copy does not survive the run.
-            CaptureFingerprint(record, target, target.SubtitlePath ?? inputPath);
-
             var extension = Path.GetExtension(inputPath);
 
             if (!SyncEngine.Supports(extension))
@@ -255,7 +267,7 @@ public class SyncOrchestrator
                 return Fail(record, attempt.Message);
             }
 
-            var change = MeasureChange(inputPath, attempt.ProducedPath);
+            var change = SubtitleOffsetProbe.Measure(inputPath, attempt.ProducedPath);
 
             if (config.MaximumOffsetMs > 0 && change.ConstantMs > config.MaximumOffsetMs)
             {
@@ -560,10 +572,10 @@ public class SyncOrchestrator
         return Path.GetFullPath(path).StartsWith(root, comparison);
     }
 
-    private void CaptureFingerprint(SyncRecord record, SubtitleTarget target, string inputPath)
+    private void CaptureFingerprint(SyncRecord record, SubtitleTarget target, string? subtitlePath)
     {
         // A changed input starts the attempt budget over.
-        if (!FingerprintMatches(record, target, inputPath))
+        if (!FingerprintMatches(record, target, subtitlePath))
         {
             record.AttemptCount = 0;
         }
@@ -575,7 +587,7 @@ public class SyncOrchestrator
             record.VideoPartialHash = FileFingerprint.TryComputePartial(target.VideoPath);
 
             // The video hash already covers an embedded track.
-            if (target.Origin == SubtitleOrigin.Embedded)
+            if (target.Origin == SubtitleOrigin.Embedded || subtitlePath is null)
             {
                 record.SourceLength = 0;
                 record.SourceLastWriteUtc = default;
@@ -583,14 +595,14 @@ public class SyncOrchestrator
                 return;
             }
 
-            var subtitleInfo = new FileInfo(inputPath);
+            var subtitleInfo = new FileInfo(subtitlePath);
             record.SourceLength = subtitleInfo.Length;
             record.SourceLastWriteUtc = subtitleInfo.LastWriteTimeUtc;
-            record.SourceSha256 = FileFingerprint.TryComputeFull(inputPath);
+            record.SourceSha256 = FileFingerprint.TryComputeFull(subtitlePath);
         }
         catch (IOException ex)
         {
-            _logger.LogDebug(ex, "Could not fingerprint {Path}", inputPath);
+            _logger.LogDebug(ex, "Could not fingerprint {Path}", subtitlePath);
         }
     }
 
@@ -619,6 +631,50 @@ public class SyncOrchestrator
         {
             _logger.LogDebug(ex, "Could not fingerprint {Path}", path);
         }
+    }
+
+    // Another sidecar on this item holding the same bytes, already measured against this video.
+    private SyncRecord? SettledTwin(SyncRecord record, SubtitleTarget target, PluginConfiguration config)
+    {
+        if (record.SourceSha256 is null || record.VideoPartialHash is null)
+        {
+            return null;
+        }
+
+        var stamp = config.OutcomeStamp();
+
+        return _store.GetByItemId(target.ItemId).Find(other =>
+            !string.Equals(other.TargetKey, target.Key, StringComparison.Ordinal)
+            && other.SourceSha256 == record.SourceSha256
+            && other.VideoPartialHash == record.VideoPartialHash
+            && other.SettingsStamp == stamp
+            && WroteNothing(other));
+    }
+
+    // ! Only a bound the plugin measured. A tool failure can be transient and must be retried.
+    private static bool WroteNothing(SyncRecord record)
+        => (record.Status == SyncStatus.Failed && record.RejectedOffsetMs is not null)
+           || (record.Status == SyncStatus.Skipped && record.SkippedMovementMs is not null);
+
+    private SyncRecord Adopt(SyncRecord record, SubtitleTarget target, SyncRecord twin)
+    {
+        record.Status = twin.Status;
+        record.Message = twin.Message;
+        record.AppliedOffsetMs = twin.AppliedOffsetMs;
+        record.RejectedOffsetMs = twin.RejectedOffsetMs;
+        record.SkippedMovementMs = twin.SkippedMovementMs;
+        record.ToolUsed = twin.ToolUsed;
+        record.ReferenceUsed = target.VideoPath;
+        record.ElapsedMs = 0;
+
+        _logger.LogInformation(
+            "Took the {Twin} result for {Item} ({Key}): identical subtitle text, same video",
+            twin.TargetKey,
+            target.ItemName,
+            target.Key);
+
+        SafeUpsert(record);
+        return record;
     }
 
     internal static bool IsStillCurrent(
@@ -673,42 +729,6 @@ public class SyncOrchestrator
     }
 
     private static string Describe(long? ms) => ms is { } value ? $"{value}ms" : "an unmeasured amount";
-
-    // What the engine did, split in two: a constant move, and a change of span from rate correction.
-    private readonly record struct OffsetChange(long? ConstantMs, long? DriftMs, double? RateRatio);
-
-    // Null members leave their bound untested and keep the result.
-    private static OffsetChange MeasureChange(string inputPath, string outputPath)
-    {
-        var firstBefore = SubtitleOffsetProbe.TryGetFirstCueMs(inputPath);
-        var firstAfter = SubtitleOffsetProbe.TryGetFirstCueMs(outputPath);
-
-        var constant = firstBefore is null || firstAfter is null
-            ? (long?)null
-            : Math.Abs(firstAfter.Value - firstBefore.Value);
-
-        var lastBefore = SubtitleOffsetProbe.TryGetLastCueMs(inputPath);
-        var lastAfter = SubtitleOffsetProbe.TryGetLastCueMs(outputPath);
-
-        if (firstBefore is null || firstAfter is null || lastBefore is null || lastAfter is null)
-        {
-            return new OffsetChange(constant, null, null);
-        }
-
-        var spanBefore = lastBefore.Value - firstBefore.Value;
-        var spanAfter = lastAfter.Value - firstAfter.Value;
-
-        // ! Too short to read a rate off. A few seconds of cues make any ratio noise.
-        if (spanBefore < MinimumSpanMs)
-        {
-            return new OffsetChange(constant, null, null);
-        }
-
-        return new OffsetChange(
-            constant,
-            Math.Abs(spanAfter - spanBefore),
-            (double)spanAfter / spanBefore);
-    }
 
     private void QueueRefresh(Guid itemId)
     {

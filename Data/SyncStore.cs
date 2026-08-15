@@ -254,6 +254,20 @@ public class SyncStore : ISyncStore, IDisposable
                 _logger.LogInformation("Gave {Count} records from an earlier version a Sync stage", migrated);
             }
 
+            var remeasured = Remeasure(records);
+            if (remeasured.Stamped > 0)
+            {
+                // ! Persist the version, or every restart re-opens the newest rejections.
+                _dirty = true;
+            }
+
+            if (remeasured.Reopened > 0)
+            {
+                _logger.LogInformation(
+                    "Re-opened {Count} offset-limit rejections for the current measurement",
+                    remeasured.Reopened);
+            }
+
             return records;
         }
         catch (JsonException ex)
@@ -294,6 +308,38 @@ public class SyncStore : ISyncStore, IDisposable
         return migrated;
     }
 
+    internal readonly record struct RemeasureReport(int Stamped, int Reopened);
+
+    // A rejection measured by an older rule is not evidence about the current one.
+    internal static RemeasureReport Remeasure(List<SyncRecord> records)
+    {
+        var stamped = 0;
+        var reopened = 0;
+
+        foreach (var record in records)
+        {
+            if (record.MeasurementVersion >= SyncRecord.CurrentMeasurementVersion)
+            {
+                continue;
+            }
+
+            record.MeasurementVersion = SyncRecord.CurrentMeasurementVersion;
+            stamped++;
+
+            if (record.Status != SyncStatus.Failed || record.RejectedOffsetMs is null)
+            {
+                continue;
+            }
+
+            record.Status = SyncStatus.Pending;
+            record.RejectedOffsetMs = null;
+            record.Message = null;
+            reopened++;
+        }
+
+        return new RemeasureReport(stamped, reopened);
+    }
+
     private static StageOutcome OutcomeFor(SyncStatus status) => status switch
     {
         SyncStatus.Synced => StageOutcome.Succeeded,
@@ -317,6 +363,7 @@ public class SyncStore : ISyncStore, IDisposable
             var records = JsonSerializer.Deserialize<List<SyncRecord>>(json, SerializerOptions)
                           ?? new List<SyncRecord>();
             Migrate(records);
+            Remeasure(records);
             _logger.LogInformation("Restored {Count} records from backup", records.Count);
 
             File.Copy(_backupFilePath, _dataFilePath, overwrite: true);

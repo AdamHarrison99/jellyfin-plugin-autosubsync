@@ -46,6 +46,11 @@ public class SyncRecord
 
     public int AttemptCount { get; set; }
 
+    // ! Bump when the offset measurement changes. A record below it has its rejection re-opened.
+    public const int CurrentMeasurementVersion = 1;
+
+    public int MeasurementVersion { get; set; }
+
     // ! Set only when MaximumOffsetMs rejected a result. Raising that limit retries the record.
     public long? RejectedOffsetMs { get; set; }
 

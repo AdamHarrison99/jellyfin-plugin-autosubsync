@@ -36,6 +36,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<ItemChangeGate>();
         serviceCollection.AddSingleton<AdaptiveConcurrency>();
         serviceCollection.AddSingleton<SyncQueue>();
+        serviceCollection.AddSingleton<TargetLocks>();
         serviceCollection.AddSingleton<SyncOrchestrator>();
         serviceCollection.AddSingleton<SubtitleDeduplicator>();
         serviceCollection.AddSingleton<RollbackService>();
