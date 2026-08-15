@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.2.1.0",
+        "changelog": "The full library scan now syncs several subtitles at once, governed by Concurrent syncs, and automatic concurrency measures how much work actually completes instead of trusting the permit. Each sync is pinned to one CPU thread so the core budget means what it says. Framerate corrections up to 30% are no longer rejected as over-large shifts, Maximum offset now defaults to 60 seconds and measures the shift only, and every sync logs how far it moved the subtitle.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-autosubsync/releases/download/v1.2.1.0/autosubsync-v1.2.1.0.zip",
+        "checksum": "c66b682ec91991bf0cc05734f58a09cd",
+        "timestamp": "2026-08-15T00:12:51Z"
+      },
+      {
         "version": "1.2.0.0",
         "changelog": "Subtitles are now aligned by ffsubsync alone; the engine fallback chain and its setting are gone. Adds a Maximum offset setting that rejects a result moving a subtitle further than you allow, raises the Minimum offset default to 150 ms, detects hearing-impaired tracks by their content rather than only their flag, and reports MicroDVD .sub files as unsupported.",
         "targetAbi": "10.11.0.0",

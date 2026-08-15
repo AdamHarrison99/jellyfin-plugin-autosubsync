@@ -1,6 +1,6 @@
 name: "AutoSubSync"
 guid: "6dbc32c5-1c68-481e-b066-9521552a2615"
-version: "1.2.0.0"
+version: "1.2.1.0"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 overview: "Automatically synchronizes external and embedded subtitles across your library."
@@ -17,8 +17,9 @@ owner: "AdamHarrison99"
 artifacts:
   - "Jellyfin.Plugin.AutoSubSync.dll"
 changelog: |
-  - Subtitles are now aligned by ffsubsync alone; the engine fallback chain and its setting are gone
-  - New "Maximum offset" setting rejects a result that moves a subtitle further than you allow
-  - Minimum offset now defaults to 150 ms
-  - Hearing-impaired tracks are detected by their content, not only by their flag
-  - MicroDVD .sub files are now reported as unsupported instead of being aligned
+  - The full library scan now syncs several subtitles at once, governed by "Concurrent syncs"
+  - Automatic concurrency measures how much work actually completes instead of trusting the permit
+  - Each sync is pinned to one CPU thread, so the core budget means what it says
+  - Framerate corrections up to 30% are no longer rejected as over-large shifts
+  - Maximum offset now defaults to 60 seconds and measures the shift only
+  - Every sync logs how far it moved the subtitle, and the status panel shows the median shift
