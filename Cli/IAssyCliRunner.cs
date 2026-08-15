@@ -15,6 +15,9 @@ public class AssyInvocationResult
 
     public bool TimedOut { get; set; }
 
+    // Null when the engine printed no diagnostics to read.
+    public EngineAlignment? Alignment { get; set; }
+
     public bool Succeeded => ExitCode == 0 && !TimedOut;
 }
 

@@ -194,7 +194,11 @@ public class AssyCliRunner : IAssyCliRunner
 
         result.ExitCode = process.ExitCode;
         result.StandardOutput = stdout.ToString();
-        result.StandardError = Tail(stderr.ToString());
+
+        // ! Read before the tail is cut. The engine prints these well above its last 4000 chars.
+        var diagnostics = stderr.ToString();
+        result.Alignment = EngineAlignment.From(diagnostics);
+        result.StandardError = Tail(diagnostics);
 
         if (expectJson)
         {

@@ -24,7 +24,7 @@ public static partial class SubtitleOffsetProbe
     // A key this short is rarely unique across one subtitle.
     private const int MinimumKeyLength = 8;
 
-    internal readonly record struct Cue(long StartMs, string Key);
+    internal readonly record struct Cue(long StartMs, long EndMs, string Key);
 
     public static long? TryGetFirstCueMs(string path)
     {
@@ -279,13 +279,18 @@ public static partial class SubtitleOffsetProbe
 
             for (var i = 0; i < lines.Count; i++)
             {
-                var match = TimestampRegex().Match(lines[i]);
-                if (!match.Success)
+                var stamps = TimestampRegex().Matches(lines[i]);
+                if (stamps.Count == 0)
                 {
                     continue;
                 }
 
-                cues.Add(new Cue(ParseGroups(match), KeyFor(lines, i)));
+                var start = ParseGroups(stamps[0]);
+
+                // A line with no second timing is a cue with no duration to speak of.
+                var end = stamps.Count > 1 ? ParseGroups(stamps[1]) : start;
+
+                cues.Add(new Cue(start, Math.Max(start, end), KeyFor(lines, i)));
             }
 
             return cues;

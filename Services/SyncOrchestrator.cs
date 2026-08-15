@@ -23,6 +23,10 @@ public class SyncOrchestrator
     // Under this the engine did nothing worth writing a file for.
     private const int MinimumMovementMs = 150;
 
+    // ! A subtitle that cannot align scores about 10 a second against its video; one that can
+    //   scores 40 and up. Half the lowest real reading measured, so it only catches the floor.
+    private const double MinimumEngineScore = 20;
+
     private readonly IAssyCliRunner _runner;
     private readonly ISubtitleExtractor _extractor;
     private readonly ImageSubtitleExtractor _imageExtractor;
@@ -376,6 +380,29 @@ public class SyncOrchestrator
                     SubtitleStageKind.Verify);
             }
 
+            // ! Only where our own check could not measure the title, and only to refuse. The
+            //   engine scoring its own alignment is not evidence that it is right.
+            if (verdict.Verdict == SyncVerdict.Inconclusive
+                && EngineConfidence(attempt) is { } confidence
+                && confidence < MinimumEngineScore)
+            {
+                TryDelete(attempt.ProducedPath);
+
+                _logger.LogWarning(
+                    "Refused the sync for {Item} ({Key}): the audio check could not measure it and "
+                    + "the engine scored its own alignment at {Confidence:F1} a second",
+                    target.ItemName,
+                    target.Key,
+                    confidence);
+
+                return Fail(
+                    record,
+                    "The audio check could not measure this title, and the engine found no real "
+                    + "alignment either.",
+                    null,
+                    SubtitleStageKind.Verify);
+            }
+
             var finalPath = config.RemoveHearingImpairedTags
                 ? await TransformAsync(target, record, attempt.ProducedPath, scratch, cancellationToken)
                     .ConfigureAwait(false)
@@ -553,7 +580,7 @@ public class SyncOrchestrator
         return path;
     }
 
-    private record EngineAttempt(string? ProducedPath, string? Message);
+    private record EngineAttempt(string? ProducedPath, string? Message, EngineAlignment? Alignment = null);
 
     private async Task<EngineAttempt> RunEngineAsync(
         SubtitleTarget target,
@@ -599,11 +626,23 @@ public class SyncOrchestrator
             var produced = IsWithin(scratchDir, invocation.Result.Output) ? invocation.Result.Output! : scratchOutput;
             if (File.Exists(produced))
             {
-                return new EngineAttempt(produced, null);
+                return new EngineAttempt(produced, null, invocation.Alignment);
             }
 
             TryDelete(scratchOutput);
             return new EngineAttempt(null, "The engine reported success but wrote no file.");
+        }
+
+        // ! The engine can finish the work and then die printing its own result. A file it wrote
+        //   in full is still the answer, and the rate bound and the audio check still judge it.
+        if (!invocation.TimedOut && invocation.Result is null && Complete(inputPath, scratchOutput))
+        {
+            _logger.LogWarning(
+                "The sync engine exited {Code} without reporting a result for {Item}, but wrote a complete subtitle; keeping it.",
+                invocation.ExitCode,
+                target.ItemName);
+
+            return new EngineAttempt(scratchOutput, null, invocation.Alignment);
         }
 
         var message = invocation.Result?.Message;
@@ -625,6 +664,37 @@ public class SyncOrchestrator
         }
 
         return new EngineAttempt(null, reason);
+    }
+
+    // The engine's own score for what it produced, per second of subtitle on screen.
+    private static double? EngineConfidence(EngineAttempt attempt)
+    {
+        if (attempt.Alignment is not { } alignment || attempt.ProducedPath is not { } path)
+        {
+            return null;
+        }
+
+        if (SubtitleOffsetProbe.TryReadCues(path) is not { Count: > 0 } cues)
+        {
+            return null;
+        }
+
+        var shown = cues.Sum(cue => Math.Max(0, cue.EndMs - cue.StartMs)) / 1000.0;
+        return alignment.PerShownSecond(shown);
+    }
+
+    // Cues lost against the input mean the write was cut short, not that the sync is done.
+    private static bool Complete(string inputPath, string producedPath)
+    {
+        if (!File.Exists(producedPath))
+        {
+            return false;
+        }
+
+        var before = SubtitleOffsetProbe.TryReadCues(inputPath)?.Count ?? 0;
+        var after = SubtitleOffsetProbe.TryReadCues(producedPath)?.Count ?? 0;
+
+        return before > 0 && after >= before - (before / 20);
     }
 
     private static bool IsWithin(string directory, string? path)
