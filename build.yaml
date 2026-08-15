@@ -1,6 +1,6 @@
 name: "AutoSubSync"
 guid: "6dbc32c5-1c68-481e-b066-9521552a2615"
-version: "1.2.2.0"
+version: "1.2.3.0"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 overview: "Automatically synchronizes external and embedded subtitles across your library."
@@ -17,9 +17,8 @@ owner: "AdamHarrison99"
 artifacts:
   - "Jellyfin.Plugin.AutoSubSync.dll"
 changelog: |
-  - Duplicate removal no longer deletes a subtitle as a duplicate of itself
-  - A subtitle removed as a duplicate is no longer retried and reported failed on every scan
-  - Changing a setting now reprocesses the subtitles that setting would have changed
-  - Lowering the minimum offset retries what it skipped; raising the maximum retries what it rejected
-  - Refreshing an item no longer re-runs subtitles that have not changed
-  - VobSub tracks identified by their .idx file are now recognized and can be converted with OCR
+  - Subtitles carrying a marker cue at the start are no longer rejected for a shift that never happened
+  - Rejections made by the old measurement are re-checked automatically after upgrading
+  - The same subtitle can no longer be synced twice at once by a scan and a library event
+  - A subtitle whose OCR failed is no longer retried on every scan
+  - Identical subtitle files on one item are now measured once instead of one engine run each

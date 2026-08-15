@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.2.3.0",
+        "changelog": "Subtitles that carry a marker cue at the start are no longer rejected for a shift that never happened; the offset is now measured from the cues themselves rather than from the position of the first one, and rejections made by the old measurement are re-checked automatically after upgrading. The same subtitle can no longer be synced twice at once by a scan and a library event, a subtitle whose OCR failed is no longer retried on every scan, and identical subtitle files on one item are now measured once instead of costing an engine run each.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-autosubsync/releases/download/v1.2.3.0/autosubsync-v1.2.3.0.zip",
+        "checksum": "d4c339bf6821af48621e5ff80d3f9e41",
+        "timestamp": "2026-08-15T16:12:24Z"
+      },
+      {
         "version": "1.2.2.0",
         "changelog": "Duplicate removal no longer deletes a subtitle as a duplicate of itself, and a subtitle removed as a duplicate is no longer retried and reported failed on every scan. Settings now apply to what has already been processed: lowering the minimum offset retries what it skipped, raising the maximum retries what it rejected, and changing an output setting reprocesses the subtitles it would have changed. Refreshing an item no longer re-runs subtitles that have not changed, and VobSub tracks identified by their .idx file are now recognized and can be converted with OCR.",
         "targetAbi": "10.11.0.0",
