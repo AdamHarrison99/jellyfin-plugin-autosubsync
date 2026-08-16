@@ -60,8 +60,9 @@ Every setting is explained on the settings page. In short:
 | Libraries | *none* | Nothing runs until you pick some. |
 | Process external subtitle files | On | Sidecar files next to your media. |
 | Process embedded subtitle tracks | Off | Extracted to a new file; the video is never modified, so Jellyfin then lists both. |
-| Skip embedded tracks when an external of the same language exists | Off | Keeps the list short. |
+| Process embedded tracks when an external of the same language exists | Off | Off keeps the list short. On brings back "Signs &amp; Songs" tracks, which carry the same language. |
 | Convert image-based subtitles to text | Off | OCR for PGS, VobSub, and DVB. Slow, never perfect, needs Tesseract. |
+| Run the OCR when a text subtitle of the same language exists | Off | Off skips minutes of OCR per track a sidecar already covers. On converts every image track. |
 | Remove hearing-impaired tags | Off | Only on tracks that look hearing-impaired; a stripped track loses `sdh` from its name. |
 | Remove duplicate external subtitles | Off | Collapses external files of one language holding the same text and styling. Backed up first. |
 | Languages | *all* | e.g. `eng, spa` or `en, es`. Two- and three-letter forms mix freely. |

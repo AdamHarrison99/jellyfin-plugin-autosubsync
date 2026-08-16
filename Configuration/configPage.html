@@ -237,6 +237,20 @@
                 opacity: 0.85;
                 line-height: 1.5;
             }
+
+            #AutoSubSyncConfigPage .reasonRow {
+                display: flex;
+                gap: 0.45em;
+                align-items: baseline;
+            }
+
+            /* Wide enough for five digits, so the text edge holds as counts grow. */
+            #AutoSubSyncConfigPage .reasonCount {
+                flex: 0 0 auto;
+                min-width: 4.2em;
+                text-align: right;
+                font-variant-numeric: tabular-nums;
+            }
         </style>
 
         <div data-role="content">
@@ -320,15 +334,16 @@
                         Jellyfin will list both the original embedded track and the synced one.
                     </div>
 
-                    <div id="skipCoveredGroup">
+                    <div id="coveredEmbeddedGroup">
                         <label class="checkboxContainer">
-                            <input is="emby-checkbox" type="checkbox" id="chkSkipCovered" />
-                            <span>Skip embedded tracks when an external subtitle of the same language exists</span>
+                            <input is="emby-checkbox" type="checkbox" id="chkCoveredEmbedded" />
+                            <span>Process embedded tracks when an external subtitle of the same language exists</span>
                         </label>
                         <div class="fieldDescription">
-                            Keeps the subtitle list short when a video already has a sidecar for a
-                            language. Note that a "Signs &amp; Songs" track is usually marked with the
-                            same language as the full subtitle, so this will skip it too.
+                            Off, a language a sidecar already covers is left alone and the subtitle
+                            list stays short. Turn this on to sync those tracks anyway &mdash; a
+                            "Signs &amp; Songs" track usually carries the same language as the full
+                            subtitle, and this is what brings it back.
                         </div>
                     </div>
 
@@ -341,6 +356,19 @@
                         can read. Converting them by OCR produces a text subtitle that can then be
                         synchronized. OCR is slow and never perfect; the result is written as a new
                         file and the original track is left alone.
+                    </div>
+
+                    <div id="coveredOcrGroup">
+                        <label class="checkboxContainer">
+                            <input is="emby-checkbox" type="checkbox" id="chkCoveredOcr" />
+                            <span>Run the OCR when a text subtitle of the same language exists</span>
+                        </label>
+                        <div class="fieldDescription">
+                            Off, an image track is skipped when you already have that language as
+                            text, which is minutes of OCR saved per track. Turn this on to convert
+                            every image track regardless. "Signs &amp; Songs" and hearing-impaired
+                            tracks are always converted either way.
+                        </div>
                     </div>
 
                     <label class="checkboxContainer">
@@ -452,9 +480,9 @@
                     <span>Retry failed subtitles</span>
                 </button>
                 <div class="fieldDescription belowControl">
-                    Puts every subtitle that failed back in the queue. They are skipped on later scans
-                    once they have failed, so use this after changing something that should change the
-                    outcome. No files change until the next scan runs.
+                    Puts every subtitle that failed back in the queue and starts a full library sync.
+                    They are skipped on later scans once they have failed, so use this after changing
+                    something that should change the outcome.
                 </div>
 
                 <br />
@@ -629,8 +657,11 @@
                     return '<div class="statusHeading">' + escapeHtml(heading) + '</div>'
                         + '<div class="statusReasons">'
                         + reasons.map(function (r) {
-                            return escapeHtml(r.Count + ' × ' + r.Reason);
-                        }).join('<br />')
+                            return '<div class="reasonRow">'
+                                + '<span class="reasonCount">' + escapeHtml(r.Count) + ' ×</span>'
+                                + '<span>' + escapeHtml(r.Reason) + '</span>'
+                                + '</div>';
+                        }).join('')
                         + '</div>';
                 }
 
@@ -638,11 +669,18 @@
                     page.querySelector('#statusStages').innerHTML = (stages || []).map(stageRow).join('');
                 }
 
-                // Nothing to skip when embedded tracks are not being processed at all.
-                function updateSkipCoveredState(page, embeddedEnabled) {
-                    page.querySelector('#chkSkipCovered').disabled = !embeddedEnabled;
-                    page.querySelector('#skipCoveredGroup')
+                // Nothing to decide when embedded tracks are not being processed at all.
+                function updateCoveredEmbeddedState(page, embeddedEnabled) {
+                    page.querySelector('#chkCoveredEmbedded').disabled = !embeddedEnabled;
+                    page.querySelector('#coveredEmbeddedGroup')
                         .classList.toggle('dependentOff', !embeddedEnabled);
+                }
+
+                // An image track stays unsupported while OCR is off; there is no track to cover.
+                function updateCoveredOcrState(page, convertEnabled) {
+                    page.querySelector('#chkCoveredOcr').disabled = !convertEnabled;
+                    page.querySelector('#coveredOcrGroup')
+                        .classList.toggle('dependentOff', !convertEnabled);
                 }
 
                 function loadStatus(page) {
@@ -662,7 +700,7 @@
 
                         page.querySelector('#statusUnsupported').innerHTML =
                             reasonBlock('Unsupported tracks', status.UnsupportedReasons)
-                            + reasonBlock('Refused by the audio check', status.RefusalReasons)
+                            + reasonBlock('Refused by audio check', status.RefusalReasons)
                             + reasonBlock('Failure reasons', status.FailureReasons);
 
                         page.querySelector('#statusPanel').style.display = '';
@@ -707,9 +745,11 @@
 
                         page.querySelector('#chkExternal').checked = config.ProcessExternalSubtitles;
                         page.querySelector('#chkEmbedded').checked = config.ProcessEmbeddedSubtitles;
-                        page.querySelector('#chkSkipCovered').checked = config.SkipEmbeddedWhenExternalExists;
-                        updateSkipCoveredState(page, config.ProcessEmbeddedSubtitles);
+                        page.querySelector('#chkCoveredEmbedded').checked = config.ProcessEmbeddedWhenExternalExists;
+                        updateCoveredEmbeddedState(page, config.ProcessEmbeddedSubtitles);
                         page.querySelector('#chkConvertImage').checked = config.ConvertImageSubtitles;
+                        page.querySelector('#chkCoveredOcr').checked = config.RunOcrWhenTextExists;
+                        updateCoveredOcrState(page, config.ConvertImageSubtitles);
                         page.querySelector('#chkRemoveHi').checked = config.RemoveHearingImpairedTags;
                         page.querySelector('#chkDeduplicate').checked = config.DeduplicateSubtitles;
                         page.querySelector('#txtLanguages').value = (config.LanguageAllowList || []).join(', ');
@@ -760,8 +800,10 @@
                         config.EnabledLibraryIds = checkedLibraryIds(page);
                         config.ProcessExternalSubtitles = page.querySelector('#chkExternal').checked;
                         config.ProcessEmbeddedSubtitles = page.querySelector('#chkEmbedded').checked;
-                        config.SkipEmbeddedWhenExternalExists = page.querySelector('#chkSkipCovered').checked;
+                        config.ProcessEmbeddedWhenExternalExists = page.querySelector('#chkCoveredEmbedded').checked;
                         config.ConvertImageSubtitles = page.querySelector('#chkConvertImage').checked;
+                        config.RunOcrWhenTextExists =
+                            page.querySelector('#chkCoveredOcr').checked;
                         config.RemoveHearingImpairedTags = page.querySelector('#chkRemoveHi').checked;
                         config.DeduplicateSubtitles = page.querySelector('#chkDeduplicate').checked;
                         config.LanguageAllowList = splitList(page.querySelector('#txtLanguages').value);
@@ -802,7 +844,11 @@
                 });
 
                 document.querySelector('#chkEmbedded').addEventListener('change', function () {
-                    updateSkipCoveredState(document.querySelector('#AutoSubSyncConfigPage'), this.checked);
+                    updateCoveredEmbeddedState(document.querySelector('#AutoSubSyncConfigPage'), this.checked);
+                });
+
+                document.querySelector('#chkConvertImage').addEventListener('change', function () {
+                    updateCoveredOcrState(document.querySelector('#AutoSubSyncConfigPage'), this.checked);
                 });
 
                 document.querySelector('#AutoSubSyncConfigForm').addEventListener('submit', function (e) {
@@ -811,16 +857,21 @@
                     return false;
                 });
 
-                document.querySelector('#btnRunNow').addEventListener('click', function () {
-                    ApiClient.getScheduledTasks().then(function (tasks) {
+                function startFullSync() {
+                    return ApiClient.getScheduledTasks().then(function (tasks) {
                         var task = tasks.filter(function (t) { return t.Key === fullSyncTaskKey; })[0];
                         if (!task) {
-                            Dashboard.alert('Could not find the Full Library Sync task.');
-                            return;
+                            return Promise.reject(new Error('task missing'));
                         }
-                        ApiClient.startScheduledTask(task.Id).then(function () {
-                            Dashboard.alert('Full library sync started.');
-                        });
+                        return ApiClient.startScheduledTask(task.Id);
+                    });
+                }
+
+                document.querySelector('#btnRunNow').addEventListener('click', function () {
+                    startFullSync().then(function () {
+                        Dashboard.alert('Full library sync started.');
+                    }, function () {
+                        Dashboard.alert('Could not find the Full Library Sync task.');
                     });
                 });
 
@@ -832,10 +883,26 @@
                         url: ApiClient.getUrl('AutoSubSync/RetryFailed'),
                         dataType: 'json'
                     }).then(function (result) {
-                        Dashboard.hideLoadingMsg();
-                        Dashboard.alert(
-                            result.Reopened + ' failed subtitle(s) queued for the next scan.');
-                        loadStatus(document);
+                        if (!result.Reopened) {
+                            Dashboard.hideLoadingMsg();
+                            Dashboard.alert('Nothing to retry; no subtitle is in a failed state.');
+                            loadStatus(document);
+                            return;
+                        }
+
+                        // Reopening alone changes nothing on disk until a scan runs.
+                        startFullSync().then(function () {
+                            Dashboard.hideLoadingMsg();
+                            Dashboard.alert(
+                                result.Reopened + ' failed subtitle(s) reopened. Full library sync started.');
+                            loadStatus(document);
+                        }, function () {
+                            Dashboard.hideLoadingMsg();
+                            Dashboard.alert(
+                                result.Reopened + ' failed subtitle(s) reopened, but the Full Library Sync '
+                                + 'task could not be started. Run it from Scheduled Tasks.');
+                            loadStatus(document);
+                        });
                     }, function () {
                         Dashboard.hideLoadingMsg();
                         Dashboard.alert('Could not retry, or syncs are still running. Check the server log.');

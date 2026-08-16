@@ -194,7 +194,9 @@ public class SyncStore : ISyncStore, IDisposable
 
         foreach (var record in records)
         {
-            if (record.Status != SyncStatus.Failed)
+            // ! Stale rows describe targets nothing offers. Reopening one queues work that
+            //   can never run.
+            if (record.Status != SyncStatus.Failed || record.Stale)
             {
                 continue;
             }

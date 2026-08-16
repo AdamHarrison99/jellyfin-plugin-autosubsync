@@ -16,6 +16,9 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         : base(applicationPaths, xmlSerializer)
     {
         Instance = this;
+
+        // ! An upgrade must keep the choice made under the inverted 1.3.0.0 element.
+        Configuration.AdoptLegacySettings();
     }
 
     public static Plugin? Instance { get; private set; }

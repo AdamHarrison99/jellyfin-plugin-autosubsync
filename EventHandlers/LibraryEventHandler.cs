@@ -18,6 +18,7 @@ public class LibraryEventHandler : IHostedService, IDisposable
     private readonly SubtitleDiscoveryService _discovery;
     private readonly SyncOrchestrator _orchestrator;
     private readonly SubtitleDeduplicator _deduplicator;
+    private readonly RecordReconciler _reconciler;
     private readonly LibraryScopeResolver _scopeResolver;
     private readonly ItemChangeGate _gate;
     private readonly AssyRuntime _runtime;
@@ -33,6 +34,7 @@ public class LibraryEventHandler : IHostedService, IDisposable
         SubtitleDiscoveryService discovery,
         SyncOrchestrator orchestrator,
         SubtitleDeduplicator deduplicator,
+        RecordReconciler reconciler,
         LibraryScopeResolver scopeResolver,
         ItemChangeGate gate,
         AssyRuntime runtime,
@@ -43,6 +45,7 @@ public class LibraryEventHandler : IHostedService, IDisposable
         _discovery = discovery;
         _orchestrator = orchestrator;
         _deduplicator = deduplicator;
+        _reconciler = reconciler;
         _scopeResolver = scopeResolver;
         _gate = gate;
         _runtime = runtime;
@@ -125,6 +128,7 @@ public class LibraryEventHandler : IHostedService, IDisposable
             }
 
             _deduplicator.ProcessItem(item.Id, targets, config);
+            _reconciler.Reconcile(item.Id, targets);
             _gate.Commit(item, config);
         }
         catch (OperationCanceledException)

@@ -11,4 +11,10 @@ public static class SyncEngine
 
     public static bool Supports(string extension)
         => Formats.Contains(extension, StringComparer.OrdinalIgnoreCase);
+
+    // ! A ".sub" reaching here carries no ".idx"; the pair is the only thing naming it VobSub.
+    public static string UnsupportedReason(string extension)
+        => string.Equals(extension, ".sub", StringComparison.OrdinalIgnoreCase)
+            ? "Unsupported: this .sub has no .idx beside it, so it cannot be identified as VobSub."
+            : $"Unsupported: the sync engine does not read {extension} subtitles.";
 }

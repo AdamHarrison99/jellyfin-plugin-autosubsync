@@ -14,6 +14,7 @@ public class FullLibrarySyncTask : IScheduledTask
     private readonly SubtitleDiscoveryService _discovery;
     private readonly SyncOrchestrator _orchestrator;
     private readonly SubtitleDeduplicator _deduplicator;
+    private readonly RecordReconciler _reconciler;
     private readonly ItemChangeGate _gate;
     private readonly ISyncStore _store;
     private readonly BackupVault _vault;
@@ -28,6 +29,7 @@ public class FullLibrarySyncTask : IScheduledTask
         SubtitleDiscoveryService discovery,
         SyncOrchestrator orchestrator,
         SubtitleDeduplicator deduplicator,
+        RecordReconciler reconciler,
         ItemChangeGate gate,
         ISyncStore store,
         BackupVault vault,
@@ -42,6 +44,7 @@ public class FullLibrarySyncTask : IScheduledTask
         _discovery = discovery;
         _orchestrator = orchestrator;
         _deduplicator = deduplicator;
+        _reconciler = reconciler;
         _gate = gate;
         _store = store;
         _vault = vault;
@@ -124,6 +127,9 @@ public class FullLibrarySyncTask : IScheduledTask
 
                     _deduplicator.ProcessItem(item.Id, targets, config);
 
+                    // ! After deduplication. It is what makes a removed duplicate stop counting.
+                    _reconciler.Reconcile(item.Id, targets);
+
                     // ! Closes the item against the refresh its own writes just queued.
                     _gate.Commit(item, config);
 
@@ -139,6 +145,10 @@ public class FullLibrarySyncTask : IScheduledTask
             _logger.LogInformation("AutoSubSync full scan cancelled");
             throw;
         }
+
+        // ! Only a scan that reached the end may do this. Scope is re-resolved; an item added
+        //   mid-scan is live and the snapshot predates it.
+        _reconciler.MarkOutOfScope(_scopeResolver.GetItemsInScope(config).Select(i => i.Id));
 
         Prune();
         _store.Flush();

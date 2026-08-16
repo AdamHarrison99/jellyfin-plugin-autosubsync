@@ -1,4 +1,5 @@
 using System.Globalization;
+using Jellyfin.Plugin.AutoSubSync.Cli;
 using Jellyfin.Plugin.AutoSubSync.Configuration;
 using Jellyfin.Plugin.AutoSubSync.Models;
 using MediaBrowser.Controller.Entities;
@@ -77,12 +78,15 @@ public class SubtitleDiscoveryService
             }
         }
 
-        if (config.SkipEmbeddedWhenExternalExists)
+        if (!config.ProcessEmbeddedWhenExternalExists)
         {
             DropCoveredEmbedded(candidates, item);
         }
 
-        DropOcrCoveredByText(candidates, item);
+        if (!config.RunOcrWhenTextExists)
+        {
+            DropOcrCoveredByText(candidates, item);
+        }
 
         AssignVariants(candidates);
 
@@ -378,8 +382,7 @@ public class SubtitleDiscoveryService
         }
         else if (!SupportedExtensions.Contains(extension))
         {
-            target.UnsupportedReason =
-                $"Unsupported: the sync engine does not read {extension} subtitles.";
+            target.UnsupportedReason = SyncEngine.UnsupportedReason(extension);
         }
         else if (!SubtitleContent.HasCues(path))
         {

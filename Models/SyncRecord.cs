@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -48,6 +48,10 @@ public class SyncRecord
     public string? Message { get; set; }
 
     public int AttemptCount { get; set; }
+
+    // ! Discovery does not offer this target. Excluded from every panel count; the row
+    //   survives as rollback's only pointer.
+    public bool Stale { get; set; }
 
     // ! Bump when the offset measurement changes. A record below it has its rejection re-opened.
     public const int CurrentMeasurementVersion = 1;

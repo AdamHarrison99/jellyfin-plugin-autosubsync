@@ -46,6 +46,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<SyncVerifier>();
         serviceCollection.AddSingleton<SyncOrchestrator>();
         serviceCollection.AddSingleton<SubtitleDeduplicator>();
+        serviceCollection.AddSingleton<RecordReconciler>();
         serviceCollection.AddSingleton<RollbackService>();
 
         serviceCollection.AddHostedService<PayloadBootstrap>();

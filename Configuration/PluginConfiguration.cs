@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
+using System.Xml.Serialization;
 using MediaBrowser.Model.Plugins;
 
 namespace Jellyfin.Plugin.AutoSubSync.Configuration;
@@ -34,11 +35,23 @@ public class PluginConfiguration : BasePluginConfiguration
 
     public bool ProcessEmbeddedSubtitles { get; set; }
 
-    // ! On, this drops signs-and-songs tracks. Defaults off.
-    public bool SkipEmbeddedWhenExternalExists { get; set; }
+    // Off, an embedded track a sidecar already covers is dropped.
+    // ! On, signs-and-songs tracks come back with everything else.
+    public bool ProcessEmbeddedWhenExternalExists { get; set; }
+
+    // ! The element 1.3.0.0 and earlier wrote, w/ the opposite sense. Read only.
+    [XmlElement("SkipEmbeddedWhenExternalExists")]
+    public bool? LegacySkipEmbeddedWhenExternalExists { get; set; }
+
+    // ! Never written back. A null nullable is stamped xsi:nil, which outlives the upgrade
+    //   and reads as a setting that is still there.
+    public bool ShouldSerializeLegacySkipEmbeddedWhenExternalExists() => false;
 
     // Image-based tracks (PGS, VobSub, DVB) are OCR'd to text before syncing.
     public bool ConvertImageSubtitles { get; set; }
+
+    // ! Reachable only while ConvertImageSubtitles is on; a bitmap is unsupported without it.
+    public bool RunOcrWhenTextExists { get; set; }
 
     public bool RemoveHearingImpairedTags { get; set; }
 
@@ -99,6 +112,16 @@ public class PluginConfiguration : BasePluginConfiguration
     // ! Half the cores, and never more. This is the ceiling to probe towards, not a starting point.
     internal static int AutoConcurrencyFor(int processorCount)
         => Math.Clamp(processorCount / 2, 1, 8);
+
+    // ! Called on load, never on save. Folding after a save would overwrite the fresh choice.
+    public void AdoptLegacySettings()
+    {
+        if (LegacySkipEmbeddedWhenExternalExists is { } skip)
+        {
+            ProcessEmbeddedWhenExternalExists = !skip;
+            LegacySkipEmbeddedWhenExternalExists = null;
+        }
+    }
 
     // Called on every save; the API accepts arbitrary JSON.
     public void Normalize()

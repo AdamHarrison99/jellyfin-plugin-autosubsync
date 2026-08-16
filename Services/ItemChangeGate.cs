@@ -113,7 +113,7 @@ public class ItemChangeGate
             config.OutcomeStamp(),
             config.ProcessExternalSubtitles,
             config.ProcessEmbeddedSubtitles,
-            config.SkipEmbeddedWhenExternalExists,
+            !config.ProcessEmbeddedWhenExternalExists,
             config.DeduplicateSubtitles,
             string.Join(',', config.LanguageAllowList));
 }

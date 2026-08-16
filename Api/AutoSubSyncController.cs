@@ -25,6 +25,7 @@ public class AutoSubSyncController : ControllerBase
     private readonly SyncQueue _queue;
     private readonly SyncCancellation _cancellation;
     private readonly RollbackService _rollback;
+    private readonly RecordReconciler _reconciler;
     private readonly ItemChangeGate _gate;
     private readonly AssyRuntime _runtime;
     private readonly SeConvRuntime _seConv;
@@ -38,6 +39,7 @@ public class AutoSubSyncController : ControllerBase
         SyncQueue queue,
         SyncCancellation cancellation,
         RollbackService rollback,
+        RecordReconciler reconciler,
         ItemChangeGate gate,
         AssyRuntime runtime,
         SeConvRuntime seConv,
@@ -50,6 +52,7 @@ public class AutoSubSyncController : ControllerBase
         _queue = queue;
         _cancellation = cancellation;
         _rollback = rollback;
+        _reconciler = reconciler;
         _gate = gate;
         _runtime = runtime;
         _seConv = seConv;
@@ -60,7 +63,9 @@ public class AutoSubSyncController : ControllerBase
     [ProducesResponseType(StatusCodes.Status200OK)]
     public ActionResult<object> GetStatus()
     {
-        var records = _store.GetAll();
+        // ! One population. A card filtered apart from the stage table is how FAILED came to
+        //   disagree with failed.
+        var records = _store.GetAll().Where(r => !r.Stale).ToList();
         var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
 
         return Ok(new
@@ -262,6 +267,8 @@ public class AutoSubSyncController : ControllerBase
                 {
                     await _orchestrator.ProcessAsync(target, config, _cancellation.Token).ConfigureAwait(false);
                 }
+
+                _reconciler.Reconcile(item.Id, targets);
 
                 // ! Closes the item against the refresh these writes queue, as both other
                 //   entry points do. Without it a manual sync costs a second pass.

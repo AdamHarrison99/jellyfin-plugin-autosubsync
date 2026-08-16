@@ -275,7 +275,7 @@ public class SyncOrchestrator
             if (!SyncEngine.Supports(extension))
             {
                 record.Status = SyncStatus.Unsupported;
-                record.Message = $"Unsupported: the sync engine does not read {extension} subtitles.";
+                record.Message = SyncEngine.UnsupportedReason(extension);
                 SafeUpsert(record);
                 return record;
             }
@@ -364,6 +364,11 @@ public class SyncOrchestrator
             {
                 TryDelete(attempt.ProducedPath);
                 record.Status = SyncStatus.Skipped;
+
+                // ! Returns before the post-sync stamp. The pre-check's Misaligned would stand,
+                //   and a discarded result is no verification failure.
+                record.RecordStage(SubtitleStageKind.Verify, StageOutcome.Skipped);
+
                 record.AppliedOffsetMs = change.ConstantMs;
                 record.SkippedMovementMs = moved;
                 record.Message =
@@ -433,7 +438,7 @@ public class SyncOrchestrator
 
                 return Fail(
                     record,
-                    "Rejected: the sync engine stretched the subtitle across the runtime and the "
+                    "Rejected: the sync engine stretched the subtitle across the runtime - the "
                     + "audio check did not measure that stretch.",
                     Math.Abs(stretch),
                     SubtitleStageKind.Verify);

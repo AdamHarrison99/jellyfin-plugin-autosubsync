@@ -187,11 +187,12 @@ public class SubtitleDeduplicator
         };
     }
 
-    // A file the user chose to have outlives one the plugin produced.
+    // A file the user chose to have outlives one the plugin produced. An unnumbered name wins ties.
     private static Candidate ChooseKeeper(List<Candidate> group)
         => group
             .OrderBy(c => c.IsPluginFile)
             .ThenByDescending(c => c.Length)
+            .ThenBy(c => CanonicalPath(c.Path) is not null)
             .ThenBy(c => c.Path, StringComparer.Ordinal)
             .First();
 
@@ -228,6 +229,10 @@ public class SubtitleDeduplicator
         }
 
         record.BackupPath ??= backup;
+
+        // ! The file this row describes is gone. It stops counting now, ¬on the next scan.
+        record.Stale = true;
+
         MarkStage(record, StageOutcome.Succeeded, $"Removed as a duplicate of {Path.GetFileName(keeperPath)}.");
 
         _logger.LogInformation(
