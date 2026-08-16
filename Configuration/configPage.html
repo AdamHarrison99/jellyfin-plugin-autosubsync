@@ -253,6 +253,14 @@
                         Discover and log everything, write nothing. Enabled by default on a fresh install.
                     </div>
 
+                    <label class="checkboxContainer">
+                        <input is="emby-checkbox" type="checkbox" id="chkRequireAudioConfirmation" />
+                        <span>Only sync when audio check is conclusive</span>
+                    </label>
+                    <div class="fieldDescription">
+                        The audio check always runs. If it cannot confidently decide whether a subtitle is in sync, the plugin will not write it, when enabled. 
+                    </div>
+
                     <br />
                     <h2>Scope</h2>
 
@@ -408,6 +416,15 @@
                 </button>
                 <div class="fieldDescription belowControl">
                     Starts the "Full Library Sync" scheduled task immediately. Takes a moment to get started, so be patient.
+                </div>
+
+                <button is="emby-button" type="button" id="btnRetryFailed" class="raised">
+                    <span>Retry failed subtitles</span>
+                </button>
+                <div class="fieldDescription belowControl">
+                    Puts every subtitle that failed back in the queue. They are skipped on later scans
+                    once they have failed, so use this after changing something that should change the
+                    outcome. No files change until the next scan runs.
                 </div>
 
                 <br />
@@ -652,6 +669,8 @@
                     ApiClient.getPluginConfiguration(pluginUniqueId).then(function (config) {
                         page.querySelector('#chkDryRun').checked = config.DryRunMode;
                         updateDryRunBanner(page, config.DryRunMode);
+                        page.querySelector('#chkRequireAudioConfirmation').checked =
+                            config.RequireAudioConfirmation;
 
                         page.querySelector('#chkExternal').checked = config.ProcessExternalSubtitles;
                         page.querySelector('#chkEmbedded').checked = config.ProcessEmbeddedSubtitles;
@@ -702,6 +721,8 @@
 
                     ApiClient.getPluginConfiguration(pluginUniqueId).then(function (config) {
                         config.DryRunMode = page.querySelector('#chkDryRun').checked;
+                        config.RequireAudioConfirmation =
+                            page.querySelector('#chkRequireAudioConfirmation').checked;
 
                         config.EnabledLibraryIds = checkedLibraryIds(page);
                         config.ProcessExternalSubtitles = page.querySelector('#chkExternal').checked;
@@ -770,6 +791,24 @@
                     });
                 });
 
+                document.querySelector('#btnRetryFailed').addEventListener('click', function () {
+                    Dashboard.showLoadingMsg();
+
+                    ApiClient.ajax({
+                        type: 'POST',
+                        url: ApiClient.getUrl('AutoSubSync/RetryFailed'),
+                        dataType: 'json'
+                    }).then(function (result) {
+                        Dashboard.hideLoadingMsg();
+                        Dashboard.alert(
+                            result.Reopened + ' failed subtitle(s) queued for the next scan.');
+                        loadStatus(document);
+                    }, function () {
+                        Dashboard.hideLoadingMsg();
+                        Dashboard.alert('Could not retry, or syncs are still running. Check the server log.');
+                    });
+                });
+
                 document.querySelector('#btnRollback').addEventListener('click', function () {
                     var message = 'Undo everything this plugin has done?\n\n'
                         + 'Subtitles it overwrote are restored from their backups, and subtitle files '
@@ -821,4 +860,4 @@
         </script>
     </div>
 </body>
-</html>
+</html

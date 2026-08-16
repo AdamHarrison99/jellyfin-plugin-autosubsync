@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text.RegularExpressions;
 
 namespace Jellyfin.Plugin.AutoSubSync.Cli;
@@ -59,12 +59,12 @@ public partial class EngineAlignment
     private static double? Last(Regex pattern, string text)
         => Numbers(pattern, text) is { Count: > 0 } values ? values[^1] : null;
 
-    [GeneratedRegex(@"score:\s*(?<v>-?[\d.]+)", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"score:\s*(?<v>-?[\d.]+)", RegexOptions.CultureInvariant, 200)]
     private static partial Regex ScoreRegex();
 
-    [GeneratedRegex(@"offset seconds:\s*(?<v>-?[\d.]+)", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"offset seconds:\s*(?<v>-?[\d.]+)", RegexOptions.CultureInvariant, 200)]
     private static partial Regex OffsetRegex();
 
-    [GeneratedRegex(@"framerate scale factor:\s*(?<v>-?[\d.]+)", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"framerate scale factor:\s*(?<v>-?[\d.]+)", RegexOptions.CultureInvariant, 200)]
     private static partial Regex RateRegex();
 }

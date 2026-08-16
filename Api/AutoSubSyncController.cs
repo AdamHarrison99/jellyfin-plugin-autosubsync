@@ -1,4 +1,4 @@
-using Jellyfin.Plugin.AutoSubSync.Cli;
+﻿using Jellyfin.Plugin.AutoSubSync.Cli;
 using Jellyfin.Plugin.AutoSubSync.Configuration;
 using Jellyfin.Plugin.AutoSubSync.Data;
 using Jellyfin.Plugin.AutoSubSync.Models;
@@ -23,6 +23,7 @@ public class AutoSubSyncController : ControllerBase
     private readonly SubtitleDiscoveryService _discovery;
     private readonly SyncOrchestrator _orchestrator;
     private readonly SyncQueue _queue;
+    private readonly SyncCancellation _cancellation;
     private readonly RollbackService _rollback;
     private readonly ItemChangeGate _gate;
     private readonly AssyRuntime _runtime;
@@ -35,6 +36,7 @@ public class AutoSubSyncController : ControllerBase
         SubtitleDiscoveryService discovery,
         SyncOrchestrator orchestrator,
         SyncQueue queue,
+        SyncCancellation cancellation,
         RollbackService rollback,
         ItemChangeGate gate,
         AssyRuntime runtime,
@@ -46,6 +48,7 @@ public class AutoSubSyncController : ControllerBase
         _discovery = discovery;
         _orchestrator = orchestrator;
         _queue = queue;
+        _cancellation = cancellation;
         _rollback = rollback;
         _gate = gate;
         _runtime = runtime;
@@ -247,7 +250,7 @@ public class AutoSubSyncController : ControllerBase
             {
                 foreach (var target in targets)
                 {
-                    await _orchestrator.ProcessAsync(target, config, CancellationToken.None).ConfigureAwait(false);
+                    await _orchestrator.ProcessAsync(target, config, _cancellation.Token).ConfigureAwait(false);
                 }
 
                 // ! Closes the item against the refresh these writes queue, as both other
@@ -283,6 +286,23 @@ public class AutoSubSyncController : ControllerBase
 
         _logger.LogInformation("Rollback requested");
         return Ok(_rollback.RollbackAll(config));
+    }
+
+    [HttpPost("RetryFailed")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public ActionResult RetryFailed()
+    {
+        // ! Reopening a record the queue is working on would race its own write back.
+        if (_queue.InFlight > 0)
+        {
+            return Conflict(new { Message = "Syncs are still running. Wait for them to finish." });
+        }
+
+        var reopened = _store.ReopenFailed();
+        _store.Flush();
+        _logger.LogInformation("Reopened {Count} failed subtitles for retry", reopened);
+        return Ok(new { Reopened = reopened });
     }
 
     [HttpPost("ClearDatabase")]

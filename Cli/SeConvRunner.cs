@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text;
 using Jellyfin.Plugin.AutoSubSync.Configuration;
 using Jellyfin.Plugin.AutoSubSync.Subtitles;
@@ -10,6 +10,10 @@ namespace Jellyfin.Plugin.AutoSubSync.Cli;
 // Spawns the OCR and text-rewrite tool, and judges it by what it wrote.
 public class SeConvRunner : ISeConvRunner
 {
+    private const int BoundedSlackChars = 64 * 1024;
+
+    private const int StandardErrorKeepChars = 512 * 1024;
+
     private const int StandardErrorTailChars = 4000;
     private const string OutputFormat = "subrip";
 
@@ -128,7 +132,7 @@ public class SeConvRunner : ISeConvRunner
         {
             if (e.Data is not null)
             {
-                stderr.AppendLine(e.Data);
+                AppendBounded(stderr, e.Data, StandardErrorKeepChars);
             }
         };
 
@@ -261,6 +265,18 @@ public class SeConvRunner : ISeConvRunner
         catch (IOException ex)
         {
             _logger.LogDebug(ex, "Failed to clean up {Path}", path);
+        }
+    }
+
+    // ! Trimmed as it grows, ¬only at the end. A chatty child holds its whole output in
+    //   memory until its timeout fires; the slack keeps the trim amortized.
+    private static void AppendBounded(StringBuilder builder, string line, int keep)
+    {
+        builder.AppendLine(line);
+
+        if (builder.Length > keep + BoundedSlackChars)
+        {
+            builder.Remove(0, builder.Length - keep);
         }
     }
 

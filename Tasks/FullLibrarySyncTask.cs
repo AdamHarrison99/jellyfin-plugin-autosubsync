@@ -1,4 +1,4 @@
-using Jellyfin.Plugin.AutoSubSync.Cli;
+﻿using Jellyfin.Plugin.AutoSubSync.Cli;
 using Jellyfin.Plugin.AutoSubSync.Data;
 using Jellyfin.Plugin.AutoSubSync.Services;
 using Jellyfin.Plugin.AutoSubSync.Subtitles;
@@ -19,6 +19,7 @@ public class FullLibrarySyncTask : IScheduledTask
     private readonly BackupVault _vault;
     private readonly AssyRuntime _runtime;
     private readonly ILibraryManager _libraryManager;
+    private readonly SyncCancellation _cancellation;
     private readonly ILogger<FullLibrarySyncTask> _logger;
 
     public FullLibrarySyncTask(
@@ -31,6 +32,7 @@ public class FullLibrarySyncTask : IScheduledTask
         BackupVault vault,
         AssyRuntime runtime,
         ILibraryManager libraryManager,
+        SyncCancellation cancellation,
         ILogger<FullLibrarySyncTask> logger)
     {
         _scopeResolver = scopeResolver;
@@ -42,6 +44,7 @@ public class FullLibrarySyncTask : IScheduledTask
         _vault = vault;
         _runtime = runtime;
         _libraryManager = libraryManager;
+        _cancellation = cancellation;
         _logger = logger;
     }
 
@@ -73,6 +76,9 @@ public class FullLibrarySyncTask : IScheduledTask
             _logger.LogWarning("Skipping full library sync: {Message}", status.Message);
             return;
         }
+
+        // ! A stop must reach syncs an event or the API started; those run under their own tokens.
+        using var stopEverything = cancellationToken.Register(_cancellation.StopAll);
 
         progress.Report(0);
 

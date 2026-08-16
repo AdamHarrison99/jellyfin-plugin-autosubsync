@@ -1,4 +1,4 @@
-using Jellyfin.Plugin.AutoSubSync.Cli;
+﻿using Jellyfin.Plugin.AutoSubSync.Cli;
 using Jellyfin.Plugin.AutoSubSync.Services;
 using Jellyfin.Plugin.AutoSubSync.Subtitles;
 using MediaBrowser.Controller.Entities;
@@ -25,6 +25,7 @@ public class LibraryEventHandler : IHostedService, IDisposable
 
     private readonly Dictionary<Guid, DateTime> _lastQueued = new();
     private readonly object _debounceLock = new();
+    private readonly SyncCancellation _cancellation;
     private readonly CancellationTokenSource _shutdownCts = new();
 
     public LibraryEventHandler(
@@ -35,6 +36,7 @@ public class LibraryEventHandler : IHostedService, IDisposable
         LibraryScopeResolver scopeResolver,
         ItemChangeGate gate,
         AssyRuntime runtime,
+        SyncCancellation cancellation,
         ILogger<LibraryEventHandler> logger)
     {
         _libraryManager = libraryManager;
@@ -44,6 +46,7 @@ public class LibraryEventHandler : IHostedService, IDisposable
         _scopeResolver = scopeResolver;
         _gate = gate;
         _runtime = runtime;
+        _cancellation = cancellation;
         _logger = logger;
     }
 
@@ -104,7 +107,8 @@ public class LibraryEventHandler : IHostedService, IDisposable
             }
 
             // ! Readiness is checked before discovery; a missing payload must not write records.
-            var status = await _runtime.EnsureReadyAsync(_shutdownCts.Token).ConfigureAwait(false);
+            using var linked = _cancellation.LinkWith(_shutdownCts.Token);
+            var status = await _runtime.EnsureReadyAsync(linked.Token).ConfigureAwait(false);
             if (!status.IsReady)
             {
                 _logger.LogDebug("Skipping {Name}: {Message}", item.Name, status.Message);
@@ -116,7 +120,7 @@ public class LibraryEventHandler : IHostedService, IDisposable
             foreach (var target in targets)
             {
                 await _orchestrator
-                    .ProcessAsync(target, config, _shutdownCts.Token)
+                    .ProcessAsync(target, config, linked.Token)
                     .ConfigureAwait(false);
             }
 

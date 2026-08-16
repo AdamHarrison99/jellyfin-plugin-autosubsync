@@ -8,6 +8,10 @@ public static class SubtitleContent
     // ! Bounds a corrupt or mislabelled file. Real subtitles are far below this.
     private const int MaxLinesRead = 400_000;
 
+    // ! Bounds the same file by size. A file w/ no line break is one line, so the line cap
+    //   cannot stop ReadLines allocating its whole length.
+    private const long MaxBytesRead = 16L * 1024 * 1024;
+
     private static readonly string[] VttBlockHeaders = { "WEBVTT", "NOTE", "STYLE", "REGION" };
 
     private enum SubtitleFormat
@@ -320,6 +324,11 @@ public static class SubtitleContent
 
         try
         {
+            if (new FileInfo(path).Length > MaxBytesRead)
+            {
+                yield break;
+            }
+
             enumerator = File.ReadLines(path).GetEnumerator();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

@@ -23,9 +23,12 @@ public class SyncOrchestrator
     // Under this the engine did nothing worth writing a file for.
     private const int MinimumMovementMs = 100;
 
-    // ! A subtitle that cannot align scores about 10 a second against its video; one that can
-    //   scores 40 and up. Half the lowest real reading measured, so it only catches the floor.
-    private const double MinimumEngineScore = 20;
+    // ! Cannot-align scores ≈10 a second, can-align 40 and up. Set at the lowest real reading:
+    //   an unmeasurable title must clear what a genuine alignment scores.
+    private const double MinimumEngineScore = 40;
+
+    // Ceiling on a move nothing verified. Only reachable w/ audio confirmation turned off.
+    private const long MaximumUnverifiedShiftMs = 60_000;
 
     private readonly IAssyCliRunner _runner;
     private readonly ISubtitleExtractor _extractor;
@@ -383,27 +386,135 @@ public class SyncOrchestrator
                     SubtitleStageKind.Verify);
             }
 
-            // ! Only where our own check could not measure the title, and only to refuse. The
-            //   engine scoring its own alignment is not evidence that it is right.
-            if (verdict.Verdict == SyncVerdict.Inconclusive
-                && EngineConfidence(attempt) is { } confidence
-                && confidence < MinimumEngineScore)
+            // ! Drift goes unmeasured on an Inconclusive verdict and on any title too short for
+            //   six windows. Hold an unchecked stretch to the tolerance the check applies.
+            if (verdict.DriftMs is null
+                && change.DriftMs is { } stretch
+                && Math.Abs(stretch) > SyncVerifier.AlignedWithinMs)
             {
                 TryDelete(attempt.ProducedPath);
 
                 _logger.LogWarning(
-                    "Rejected the sync for {Item} ({Key}): the audio check could not measure it and "
-                    + "the engine scored its own alignment at {Confidence:F1} a second",
+                    "Rejected the sync for {Item} ({Key}): it stretches the subtitle by {Drift} ms "
+                    + "across the runtime and the audio check never measured drift ({Windows} windows)",
                     target.ItemName,
                     target.Key,
-                    confidence);
+                    stretch,
+                    verdict.Windows);
 
                 return Fail(
                     record,
-                    "Rejected: the audio check could not measure this title and the sync engine "
-                    + "found no usable alignment.",
-                    null,
+                    $"Rejected: the sync stretched the subtitle by {Math.Abs(stretch)} ms and the "
+                    + "audio check could not confirm it.",
+                    Math.Abs(stretch),
                     SubtitleStageKind.Verify);
+            }
+
+            // ! Backstop for a check that confirmed nothing. ¬a tight leash: reaching here means
+            //   audio confirmation is off, and a sidecar for another release is legitimately late.
+            if (verdict.Verdict == SyncVerdict.Inconclusive
+                && change.ConstantMs is { } shift
+                && Math.Abs(shift) > MaximumUnverifiedShiftMs)
+            {
+                TryDelete(attempt.ProducedPath);
+
+                _logger.LogWarning(
+                    "Rejected the sync for {Item} ({Key}): it moves the subtitle {Shift} ms and the "
+                    + "audio check confirmed nothing",
+                    target.ItemName,
+                    target.Key,
+                    shift);
+
+                return Fail(
+                    record,
+                    $"Rejected: the sync moved the subtitle {Math.Abs(shift)} ms and the audio "
+                    + "check could not confirm it.",
+                    Math.Abs(shift),
+                    SubtitleStageKind.Verify);
+            }
+
+            // ! Costs a parse of the produced file, so only where the gate below reads it or the
+            //   debug line below reports it.
+            var confidence = verdict.Verdict == SyncVerdict.Inconclusive
+                || _logger.IsEnabled(LogLevel.Debug)
+                    ? EngineConfidence(attempt)
+                    : null;
+
+            // ! Only where our own check could not measure the title, and only to refuse. The
+            //   engine scoring its own alignment is ¬evidence that it is right.
+            if (verdict.Verdict == SyncVerdict.Inconclusive)
+            {
+                // ! The check ran and returned no answer, which is not the same as a pass. Where
+                //   confirmation is required that ends it, and the engine's score is not consulted.
+                if (config.RequireAudioConfirmation)
+                {
+                    TryDelete(attempt.ProducedPath);
+
+                    _logger.LogWarning(
+                        "Rejected the sync for {Item} ({Key}): the audio check could not confirm it "
+                        + "({Windows} windows, peak {Strength:F2}x)",
+                        target.ItemName,
+                        target.Key,
+                        verdict.Windows,
+                        verdict.Strength);
+
+                    return Fail(
+                        record,
+                        "Rejected: the audio check could not confirm this result, and it is set to "
+                        + "write only what it confirms.",
+                        null,
+                        SubtitleStageKind.Verify);
+                }
+
+                if (confidence is not { } tooLow)
+                {
+                    TryDelete(attempt.ProducedPath);
+
+                    _logger.LogWarning(
+                        "Rejected the sync for {Item} ({Key}): the audio check could not measure it "
+                        + "and the engine never scored its own alignment",
+                        target.ItemName,
+                        target.Key);
+
+                    return Fail(
+                        record,
+                        "Rejected: the audio check could not measure this title and the sync engine "
+                        + "never scored its alignment.",
+                        null,
+                        SubtitleStageKind.Verify);
+                }
+
+                if (tooLow < MinimumEngineScore)
+                {
+                    TryDelete(attempt.ProducedPath);
+
+                    _logger.LogWarning(
+                        "Rejected the sync for {Item} ({Key}): the audio check could not measure it "
+                        + "and the engine scored its own alignment at {Confidence:F1} a second",
+                        target.ItemName,
+                        target.Key,
+                        tooLow);
+
+                    return Fail(
+                        record,
+                        "Rejected: the audio check could not measure this title and the sync engine "
+                        + "found no usable alignment.",
+                        null,
+                        SubtitleStageKind.Verify);
+                }
+            }
+
+            if (confidence is { } accepted)
+            {
+                _logger.LogDebug(
+                    "Verify passed for {Item} ({Key}): {Verdict}, {Windows} windows, peak "
+                    + "{Strength:F2}x, the engine scored its own alignment at {Confidence:F1} a second",
+                    target.ItemName,
+                    target.Key,
+                    verdict.Verdict,
+                    verdict.Windows,
+                    verdict.Strength,
+                    accepted);
             }
 
             var finalPath = config.RemoveHearingImpairedTags

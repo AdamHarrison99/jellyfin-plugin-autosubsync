@@ -90,7 +90,13 @@ public class LibraryScopeResolver
         var normalizedPath = path.Replace('\\', '/');
         var normalizedRoot = root.Replace('\\', '/').TrimEnd('/');
 
-        if (!normalizedPath.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase))
+        // ! Ignoring case off Windows would accept a sibling library as this one, and this
+        //   decides whether an unticked library gets synced.
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+
+        if (!normalizedPath.StartsWith(normalizedRoot, comparison))
         {
             return false;
         }

@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using Jellyfin.Plugin.AutoSubSync.Configuration;
@@ -11,6 +11,10 @@ namespace Jellyfin.Plugin.AutoSubSync.Cli;
 // Spawns the pinned assy-cli and parses its output.
 public class AssyCliRunner : IAssyCliRunner
 {
+    private const int BoundedSlackChars = 64 * 1024;
+
+    private const int StandardErrorKeepChars = 512 * 1024;
+
     private const int StandardErrorTailChars = 4000;
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
@@ -143,7 +147,7 @@ public class AssyCliRunner : IAssyCliRunner
         {
             if (e.Data is not null)
             {
-                stderr.AppendLine(e.Data);
+                AppendBounded(stderr, e.Data, StandardErrorKeepChars);
             }
         };
 
@@ -309,6 +313,18 @@ public class AssyCliRunner : IAssyCliRunner
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to kill the assy-cli process tree");
+        }
+    }
+
+    // ! Trimmed as it grows, ¬only at the end. A chatty child holds its whole output in
+    //   memory until its timeout fires; the slack keeps the trim amortized.
+    private static void AppendBounded(StringBuilder builder, string line, int keep)
+    {
+        builder.AppendLine(line);
+
+        if (builder.Length > keep + BoundedSlackChars)
+        {
+            builder.Remove(0, builder.Length - keep);
         }
     }
 

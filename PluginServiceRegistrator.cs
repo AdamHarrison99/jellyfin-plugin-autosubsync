@@ -1,4 +1,4 @@
-using Jellyfin.Plugin.AutoSubSync.Cli;
+﻿using Jellyfin.Plugin.AutoSubSync.Cli;
 using Jellyfin.Plugin.AutoSubSync.Data;
 using Jellyfin.Plugin.AutoSubSync.EventHandlers;
 using Jellyfin.Plugin.AutoSubSync.Services;
@@ -35,6 +35,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<LibraryScopeResolver>();
         serviceCollection.AddSingleton<ItemChangeGate>();
         serviceCollection.AddSingleton<AdaptiveConcurrency>();
+        serviceCollection.AddSingleton<SyncCancellation>();
         serviceCollection.AddSingleton<SyncQueue>();
         serviceCollection.AddSingleton<TargetLocks>();
         serviceCollection.AddSingleton<SyncVerifier>();

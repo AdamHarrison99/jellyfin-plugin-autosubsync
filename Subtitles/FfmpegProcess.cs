@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text;
 using Jellyfin.Plugin.AutoSubSync.Configuration;
 using Microsoft.Extensions.Logging;
@@ -10,6 +10,8 @@ internal record FfmpegOutcome(bool Succeeded, string StandardError);
 // One ffmpeg invocation, under the same timeout and kill-the-tree rules as the sync engines.
 internal static class FfmpegProcess
 {
+    private const int BoundedSlackChars = 64 * 1024;
+
     private const int StandardErrorTailChars = 4000;
     private const int DrainMilliseconds = 200;
 
@@ -31,7 +33,7 @@ internal static class FfmpegProcess
         {
             if (e.Data is not null)
             {
-                stderr.AppendLine(e.Data);
+                AppendBounded(stderr, e.Data, keepChars);
             }
         };
 
@@ -89,6 +91,18 @@ internal static class FfmpegProcess
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Failed to kill the ffmpeg process tree");
+        }
+    }
+
+    // ! Trimmed as it grows, ¬only at the end. A chatty child holds its whole output in
+    //   memory until its timeout fires; the slack keeps the trim amortized.
+    private static void AppendBounded(StringBuilder builder, string line, int keep)
+    {
+        builder.AppendLine(line);
+
+        if (builder.Length > keep + BoundedSlackChars)
+        {
+            builder.Remove(0, builder.Length - keep);
         }
     }
 

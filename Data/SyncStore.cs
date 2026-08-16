@@ -25,6 +25,9 @@ public interface ISyncStore
 
     void RemoveMany(IEnumerable<Guid> recordIds);
 
+    // Puts every failed record back in the queue. Returns how many were reopened.
+    int ReopenFailed();
+
     int Clear();
 
     // Writes pending changes to disk now. Call at the end of a batch of work.
@@ -165,6 +168,37 @@ public class SyncStore : ISyncStore, IDisposable
             {
                 _dirty = true;
             }
+        }
+    }
+
+    // ! Clears the bound as well as the status. A record that keeps RejectedOffsetMs reads as one
+    //   the plugin measured and declined, and IsExhausted would park it again untried.
+    public int ReopenFailed()
+    {
+        lock (_lock)
+        {
+            var reopened = 0;
+
+            foreach (var record in _records)
+            {
+                if (record.Status != SyncStatus.Failed)
+                {
+                    continue;
+                }
+
+                record.Status = SyncStatus.Pending;
+                record.RejectedOffsetMs = null;
+                record.Message = null;
+                record.Stages?.Clear();
+                reopened++;
+            }
+
+            if (reopened > 0)
+            {
+                _dirty = true;
+            }
+
+            return reopened;
         }
     }
 

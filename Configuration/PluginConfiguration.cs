@@ -18,6 +18,10 @@ public class PluginConfiguration : BasePluginConfiguration
 
     public bool DryRunMode { get; set; } = true;
 
+    // ! The audio check runs either way. This decides what happens when it cannot reach a
+    //   confident answer: on, the subtitle is left as it was; off, the engine's own score decides.
+    public bool RequireAudioConfirmation { get; set; } = true;
+
     // ---- Scope ----
 
     // ! Empty means no library is processed. Opt in, never opt out.
@@ -48,6 +52,12 @@ public class PluginConfiguration : BasePluginConfiguration
 
     public string OutputEncoding { get; set; } = "same_as_input";
 
+    private static readonly string[] SupportedEncodings =
+    [
+        "same_as_input", "utf-8", "utf-8-sig", "utf-16", "utf-16-le", "utf-16-be",
+        "latin-1", "cp1252", "ascii"
+    ];
+
     // ! Changing this orphans output written under the old marker.
     public string MarkerSuffix { get; set; } = "autosubsync";
 
@@ -73,6 +83,7 @@ public class PluginConfiguration : BasePluginConfiguration
         => string.Join(
             '|',
             DryRunMode ? "dry" : "live",
+            RequireAudioConfirmation ? "confirmed" : "scored",
             RemoveHearingImpairedTags ? "hi-" : "hi+",
             ConvertImageSubtitles ? "ocr+" : "ocr-",
             ExternalWriteMode,
@@ -102,9 +113,15 @@ public class PluginConfiguration : BasePluginConfiguration
         LanguageAllowList ??= [];
         EnabledLibraryIds ??= [];
 
-        if (string.IsNullOrWhiteSpace(OutputEncoding))
+        // ! Reaches the engine as --encoding. An unknown value fails every sync, and the failure
+        //   names the engine, ¬this setting.
+        if (Array.IndexOf(SupportedEncodings, OutputEncoding?.Trim().ToLowerInvariant()) < 0)
         {
             OutputEncoding = "same_as_input";
+        }
+        else
+        {
+            OutputEncoding = OutputEncoding!.Trim().ToLowerInvariant();
         }
 
         LanguageAllowList = LanguageAllowList

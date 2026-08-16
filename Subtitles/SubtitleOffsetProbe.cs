@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -374,6 +374,6 @@ public static partial class SubtitleOffsetProbe
     }
 
     // Matches SRT "00:01:23,456", VTT "00:01:23.456", and ASS "0:01:23.45".
-    [GeneratedRegex(@"(?<h>\d{1,2}):(?<m>\d{2}):(?<s>\d{2})[,.](?<f>\d{2,3})", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"(?<h>\d{1,2}):(?<m>\d{2}):(?<s>\d{2})[,.](?<f>\d{2,3})", RegexOptions.CultureInvariant, 200)]
     private static partial Regex TimestampRegex();
 }

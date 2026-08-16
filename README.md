@@ -56,6 +56,7 @@ Every setting is explained on the settings page. In short:
 | Setting | Default | |
 | --- | --- | --- |
 | Dry run mode | On | Finds and records everything, changes nothing. |
+| Only sync when audio check is conclusive | On | Leaves the subtitle alone when the audio cannot confirm the result. |
 | Libraries | *none* | Nothing runs until you pick some. |
 | Process external subtitle files | On | Sidecar files next to your media. |
 | Process embedded subtitle tracks | Off | Extracted to a new file; the video is never modified, so Jellyfin then lists both. |
@@ -70,22 +71,26 @@ Every setting is explained on the settings page. In short:
 | Refresh the item after writing a subtitle | Off | Re-indexes it so the subtitle appears without a manual scan. |
 
 A subtitle is synced once and then left alone — but changing a setting that would have produced a
-different result puts the affected subtitles back in the queue.
+different result puts the affected subtitles back in the queue. **Retry failed subtitles** does the
+same for anything that failed, without waiting for a setting to change.
 
 Files the plugin writes carry an `autosubsync` marker in their name. That is how it recognizes its
 own output, and how rollback knows what it may delete.
 
 ## The audio check
 
-Every subtitle is scored against the video's own audio, before and after syncing. Nothing to
-configure, and it costs a few seconds against a sync that takes minutes.
+Every subtitle is scored against the video's own audio, before and after syncing. It costs a few
+seconds against a sync that takes minutes.
 
 - **Already on the speech** — the engine is not run and the file is left as it is.
 - **Synced badly** — the result is discarded, your original stands, and the item is listed under
   **refused by audio check** rather than as a failure.
 - **Right at the start, minutes out at the end** — that framerate mismatch is caught too.
 
-Some titles cannot be measured; a film under a continuous score may never give a clear answer. The check only refuses what it can show is wrong.
+Some titles cannot be measured; a film under a continuous score may never give a clear answer. Those
+are left alone by default — all that remains to judge them is the sync engine's own opinion of its
+work, and that is sometimes confidently wrong. Untick **Only sync when audio check is conclusive**
+to let it decide instead.
 
 ## Undoing everything
 

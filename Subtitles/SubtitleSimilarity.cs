@@ -48,6 +48,11 @@ public static class SubtitleSimilarity
     // Below this a match is coincidence: forced tracks are a handful of cues.
     public const int MinimumCues = 10;
 
+    // Longest span a bracket may cover before it reads as dialogue: `<font color="#FFFFFF">`
+    // against an ASS override block, which carries several tags at once.
+    private const int MaxMarkupTag = 48;
+    private const int MaxOverrideBlock = 160;
+
     public static SimilarityScore Compare(string leftPath, string rightPath)
         => Compare(SubtitleProfile.Read(leftPath), SubtitleProfile.Read(rightPath));
 
@@ -138,26 +143,24 @@ public static class SubtitleSimilarity
     private static string NormalizeCue(string cue)
     {
         var builder = new StringBuilder(cue.Length);
-        var depth = 0;
         var space = false;
 
-        foreach (var c in cue)
+        for (var index = 0; index < cue.Length; index++)
         {
+            var c = cue[index];
+
+            // ! A tag closes on its own bracket within a bounded span. "5 < 6" is dialogue,
+            //   and swallowing to the next bracket would drop the rest of the line.
             if (c is '<' or '{')
             {
-                depth++;
-                continue;
-            }
+                var close = cue.IndexOf(c == '<' ? '>' : '}', index + 1);
+                var limit = c == '<' ? MaxMarkupTag : MaxOverrideBlock;
 
-            if (c is '>' or '}')
-            {
-                depth = Math.Max(0, depth - 1);
-                continue;
-            }
-
-            if (depth > 0)
-            {
-                continue;
+                if (close > index && close - index <= limit)
+                {
+                    index = close;
+                    continue;
+                }
             }
 
             if (char.IsLetterOrDigit(c))

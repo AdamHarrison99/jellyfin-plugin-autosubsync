@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Jellyfin.Plugin.AutoSubSync.Subtitles;
@@ -33,6 +33,8 @@ public partial class SyncVerifier
     private const int MinimumWindows = 4;
     private const int MaximumWindows = 16;
     private const int WindowSeconds = 90;
+    // ! Halving this doubles the count and so halves each window, and at 3 the measurable
+    //   control stopped being measurable. Fewer, longer windows beat more, shorter ones.
     private const int MinutesPerWindow = 6;
 
     // Under this the whole track is cheaper than seeking around it.
@@ -65,7 +67,7 @@ public partial class SyncVerifier
     private const double HalfRivalRatio = 1.1;
 
     // Two windows a side is not enough to call a rate error.
-    private const int DriftWindows = 6;
+    internal const int DriftWindows = 6;
 
     private readonly IMediaEncoder _mediaEncoder;
     private readonly ILogger<SyncVerifier> _logger;
@@ -237,6 +239,14 @@ public partial class SyncVerifier
         }
 
         var count = (int)Math.Clamp(spanMs / (MinutesPerWindow * 60_000), MinimumWindows, MaximumWindows);
+
+        // ! Drift needs DriftWindows samples, but only take them where they cost no window
+        //   length. A shorter window holds fewer onsets, which is what stops the check measuring.
+        if (count < DriftWindows && spanMs / (DriftWindows * 3) >= WindowSeconds * 1000L)
+        {
+            count = DriftWindows;
+        }
+
         var length = Math.Min(WindowSeconds * 1000L, spanMs / (count * 3));
         var stride = (spanMs - length) / Math.Max(1, count - 1);
 
@@ -418,6 +428,6 @@ public partial class SyncVerifier
     private static string Seconds(long milliseconds)
         => (milliseconds / 1000.0).ToString("F3", CultureInfo.InvariantCulture);
 
-    [GeneratedRegex(@"silence_end:\s*(?<t>[\d.]+)", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"silence_end:\s*(?<t>[\d.]+)", RegexOptions.CultureInvariant, 200)]
     private static partial Regex SilenceEndRegex();
 }
