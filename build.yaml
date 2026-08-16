@@ -1,6 +1,6 @@
 name: "AutoSubSync"
 guid: "6dbc32c5-1c68-481e-b066-9521552a2615"
-version: "1.4.0.0"
+version: "1.4.1.0"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 overview: "Automatically synchronizes external and embedded subtitles across your library."
@@ -17,11 +17,8 @@ owner: "AdamHarrison99"
 artifacts:
   - "Jellyfin.Plugin.AutoSubSync.dll"
 changelog: |
-  - The status panel no longer counts subtitles that are gone from your library
-  - A subtitle removed as a duplicate stops counting in the same run, not the next scan
-  - Retry failed subtitles now starts a full library sync as well
-  - New setting: Run the OCR when a text subtitle of the same language exists
-  - Embedded tracks an external subtitle already covers are now skipped by default
-  - Deduplication keeps the unnumbered filename when it picks which copy survives
-  - A .sub with no .idx beside it now says why it cannot be read
-  - Subtitles moved less than the minimum are no longer counted as audio check failures
+  - The status panel counts rejected subtitles separately from failed ones
+  - Failure reasons no longer show raw output from the sync engine or the OCR tool
+  - Reason lines no longer repeat the heading they are listed under
+  - A subtitle rescaled past the framerate limit is reported as a failure, not a rejection
+  - The audio check settings note which rejections unticking it will release
