@@ -1,6 +1,6 @@
 name: "AutoSubSync"
 guid: "6dbc32c5-1c68-481e-b066-9521552a2615"
-version: "1.3.0.0"
+version: "1.4.0.0"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 overview: "Automatically synchronizes external and embedded subtitles across your library."
@@ -17,9 +17,11 @@ owner: "AdamHarrison99"
 artifacts:
   - "Jellyfin.Plugin.AutoSubSync.dll"
 changelog: |
-  - A VobSub track holding several languages is now read as one subtitle per language
-  - OCR output the reader could not resolve is refused instead of being written to your library
-  - Image subtitles are read with the right OCR model, including per-script Chinese and Serbian
-  - The status panel separates a refusal by the audio check from a tool failure
-  - New status cards for tracks whose source file has gone and tracks not yet run
-  - More titles can be measured by the audio check instead of being left unjudged
+  - The status panel no longer counts subtitles that are gone from your library
+  - A subtitle removed as a duplicate stops counting in the same run, not the next scan
+  - Retry failed subtitles now starts a full library sync as well
+  - New setting: Run the OCR when a text subtitle of the same language exists
+  - Embedded tracks an external subtitle already covers are now skipped by default
+  - Deduplication keeps the unnumbered filename when it picks which copy survives
+  - A .sub with no .idx beside it now says why it cannot be read
+  - Subtitles moved less than the minimum are no longer counted as audio check failures
