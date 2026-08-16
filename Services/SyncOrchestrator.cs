@@ -450,13 +450,19 @@ public class SyncOrchestrator
                 {
                     TryDelete(attempt.ProducedPath);
 
+                    // ! The three numbers separate the gates: hits under the floor is a title
+                    //   whose audio yielded too little, a low peak is a flat sweep.
                     _logger.LogWarning(
                         "Rejected the sync for {Item} ({Key}): the audio check could not confirm it "
-                        + "({Windows} windows, peak {Strength:F2}x)",
+                        + "({Windows} windows, peak {Strength:F2}x, {Hits} hits against a floor of "
+                        + "{Floor}, {Onsets} onsets)",
                         target.ItemName,
                         target.Key,
                         verdict.Windows,
-                        verdict.Strength);
+                        verdict.Strength,
+                        verdict.Hits,
+                        verdict.Floor,
+                        verdict.Onsets);
 
                     return Fail(
                         record,
@@ -1030,9 +1036,33 @@ public class SyncOrchestrator
         record.Message = string.IsNullOrWhiteSpace(message)
             ? "Failed: the sync did not complete."
             : message;
-        _logger.LogWarning("Sync failed for {Item}: {Message}", record.ItemName, record.Message);
+        LogOutcome(record);
         SafeUpsert(record, kind);
         return record;
+    }
+
+    // ! A refusal is not a tool failure, and the status panel already counts them apart. Lead the
+    //   log line with the word the message and the panel both use.
+    private void LogOutcome(SyncRecord record)
+    {
+        var message = record.Message ?? string.Empty;
+
+        if (message.StartsWith("Rejected:", StringComparison.Ordinal))
+        {
+            _logger.LogWarning("Rejected the sync for {Item}: {Reason}", record.ItemName, Reason(message));
+            return;
+        }
+
+        _logger.LogWarning("Sync failed for {Item}: {Reason}", record.ItemName, Reason(message));
+    }
+
+    // The message without its leading action word, which the log line supplies itself.
+    private static string Reason(string? message)
+    {
+        var text = message ?? string.Empty;
+        var split = text.IndexOf(": ", StringComparison.Ordinal);
+
+        return split > 0 ? text[(split + 2)..] : text;
     }
 
     // Returns null so a stage can hand its failure straight back to the pipeline.
@@ -1045,7 +1075,7 @@ public class SyncOrchestrator
         record.Message = string.IsNullOrWhiteSpace(message)
             ? "Failed: the OCR step did not complete."
             : message;
-        _logger.LogWarning("{Kind} failed for {Item}: {Message}", kind, record.ItemName, record.Message);
+        _logger.LogWarning("{Kind} failed for {Item}: {Reason}", kind, record.ItemName, Reason(record.Message));
         SafeUpsert(record, kind);
         return null;
     }

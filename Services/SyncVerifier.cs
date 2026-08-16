@@ -19,7 +19,18 @@ public readonly record struct VerificationResult(
     int? BestShiftMs,
     int? DriftMs,
     int Windows,
-    double Strength);
+    double Strength,
+    int Hits = 0,
+    int Floor = 0,
+    int Onsets = 0);
+
+// The sweep's account of itself: the winner, and the numbers its gates judged it by.
+public readonly record struct ShiftFit(
+    int? Shift,
+    double Strength,
+    int Hits,
+    int Floor,
+    int Onsets);
 
 // The speech onsets read out of one video, and the windows they were read from.
 public sealed record AudioSample(
@@ -151,7 +162,7 @@ public partial class SyncVerifier
             return Nothing(sample.Windows);
         }
 
-        var whole = Fit(sample.Onsets, sample.Plan, starts, RivalRatio, out var strength);
+        var whole = Fit(sample.Onsets, sample.Plan, starts, RivalRatio);
 
         // ! Halved, each side is a shorter and weaker sample, so it is only asked at all once
         //   there are windows to spare. Two a side is noise arguing with noise.
@@ -162,12 +173,20 @@ public partial class SyncVerifier
         //   half of it still fits its own. That disagreement is the answer.
         if (drift is { } spread && Math.Abs(spread) > AlignedWithinMs)
         {
-            return new VerificationResult(SyncVerdict.Misaligned, whole, drift, sample.Windows, halves);
+            return new VerificationResult(
+                SyncVerdict.Misaligned,
+                whole.Shift,
+                drift,
+                sample.Windows,
+                halves,
+                whole.Hits,
+                whole.Floor,
+                whole.Onsets);
         }
 
-        if (whole is not { } best)
+        if (whole.Shift is not { } best)
         {
-            return Nothing(sample.Windows);
+            return Nothing(sample.Windows, whole);
         }
 
         return new VerificationResult(
@@ -175,7 +194,10 @@ public partial class SyncVerifier
             best,
             drift,
             sample.Windows,
-            strength);
+            whole.Strength,
+            whole.Hits,
+            whole.Floor,
+            whole.Onsets);
     }
 
     // ! A rate error hides from a single shift: right at the start, minutes out at the end.
@@ -192,13 +214,13 @@ public partial class SyncVerifier
         var early = sample.Plan.Take(half).ToList();
         var late = sample.Plan.Skip(sample.Plan.Count - half).ToList();
 
-        var first = Fit(Within(sample.Onsets, early), early, starts, HalfRivalRatio, out var opening);
-        var second = Fit(Within(sample.Onsets, late), late, starts, HalfRivalRatio, out var closing);
+        var first = Fit(Within(sample.Onsets, early), early, starts, HalfRivalRatio);
+        var second = Fit(Within(sample.Onsets, late), late, starts, HalfRivalRatio);
 
         // The weaker half is what the answer rests on.
-        strength = Math.Min(opening, closing);
+        strength = Math.Min(first.Strength, second.Strength);
 
-        return first is { } a && second is { } b ? b - a : null;
+        return first.Shift is { } a && second.Shift is { } b ? b - a : null;
     }
 
     private static List<long> Within(IReadOnlyList<long> onsets, List<Window> windows)
@@ -206,27 +228,34 @@ public partial class SyncVerifier
             .Where(o => windows.Any(w => o >= w.StartMs && o <= w.StartMs + w.LengthMs))
             .ToList();
 
-    private static int? Fit(
+    private static ShiftFit Fit(
         IReadOnlyList<long> onsets,
         IReadOnlyList<Window> windows,
         List<long> starts,
-        double rivalRatio,
-        out double strength)
+        double rivalRatio)
     {
         var reachable = starts.Count(start => windows
             .Any(w => start >= w.StartMs - SweepMs && start <= w.StartMs + w.LengthMs + SweepMs));
 
-        if (reachable == 0)
-        {
-            strength = 0;
-            return null;
-        }
-
-        return BestShift(onsets, starts, reachable, rivalRatio, out strength);
+        // ! Still reports the supply. Zeroing it here reads in the log as a title with no audio,
+        //   which is a different failure from one whose cues sit outside every window.
+        return reachable == 0
+            ? new ShiftFit(null, 0, 0, 0, onsets.Count)
+            : BestFit(onsets, starts, reachable, rivalRatio);
     }
 
-    private static VerificationResult Nothing(int windows)
-        => new(SyncVerdict.Inconclusive, null, null, windows, 0);
+    // ! Carries the numbers the sweep measured. Reporting a flat zero here is what left the field
+    //   logs unable to say which gate refused a title.
+    private static VerificationResult Nothing(int windows, ShiftFit fit = default)
+        => new(
+            SyncVerdict.Inconclusive,
+            null,
+            null,
+            windows,
+            fit.Strength,
+            fit.Hits,
+            fit.Floor,
+            fit.Onsets);
 
     public readonly record struct Window(long StartMs, long LengthMs);
 
@@ -338,14 +367,13 @@ public partial class SyncVerifier
 
     // The shift that puts the most cues on a speech onset. Null when no shift stands out.
     internal static int? BestShift(IReadOnlyList<long> onsets, List<long> starts, int reachable)
-        => BestShift(onsets, starts, reachable, RivalRatio, out _);
+        => BestFit(onsets, starts, reachable, RivalRatio).Shift;
 
-    internal static int? BestShift(
+    internal static ShiftFit BestFit(
         IReadOnlyList<long> onsets,
         List<long> starts,
         int reachable,
-        double rivalRatio,
-        out double strength)
+        double rivalRatio)
     {
         var buckets = new HashSet<long>();
         foreach (var onset in onsets)
@@ -389,19 +417,17 @@ public partial class SyncVerifier
             .DefaultIfEmpty(0)
             .Max();
 
-        strength = bestHits / (double)Math.Max(1, rival);
+        var strength = bestHits / (double)Math.Max(1, rival);
 
-        // ! Against the cues the windows can reach. A film's other nine tenths were never sampled
-        //   and cannot hit at any shift.
-        var floor = Math.Max(MinimumHits, (int)(reachable * MinimumHitShare));
+        // ! Against the cues the windows reach, never past what the audio supplies.
+        //   MinimumHits is what still stops a verdict being read off a handful.
+        var supply = Math.Min(reachable, buckets.Count);
+        var floor = Math.Max(MinimumHits, (int)(supply * MinimumHitShare));
         var mean = (double)total / samples;
 
-        if (bestHits < floor || bestHits < mean * PeakRatio || strength < rivalRatio)
-        {
-            return null;
-        }
+        var refused = bestHits < floor || bestHits < mean * PeakRatio || strength < rivalRatio;
 
-        return answer;
+        return new ShiftFit(refused ? null : answer, strength, bestHits, floor, buckets.Count);
     }
 
     private static int Hits(HashSet<long> buckets, List<long> starts, int shift)
