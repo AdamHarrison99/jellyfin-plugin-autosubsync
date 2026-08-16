@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.4.2.0",
+        "changelog": "Duplicates the plugin removed are now counted in the pipeline table instead of disappearing from it, and removals from earlier runs are restored to it. Image tracks skipped because a text subtitle of the same language already covers them are listed as unsupported rather than going unreported. The audio check column no longer appears on pipeline steps the audio check does not run, and subtitles awaiting a dry run are no longer counted as already in sync. The median shift is reported as a distance and negative shifts display correctly, reason lists are no longer cut off after eight entries, and the panel shows when its counts were last updated.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-autosubsync/releases/download/v1.4.2.0/autosubsync-v1.4.2.0.zip",
+        "checksum": "9cde8f62c948616e18700fd532fadd94",
+        "timestamp": "2026-08-16T19:29:25Z"
+      },
+      {
         "version": "1.4.1.0",
         "changelog": "The status panel counts rejected subtitles separately from failed ones, so the pipeline table no longer reports a rejection by the audio check as a synchronization failure. Failure reasons no longer show raw output from the sync engine or the OCR tool, and reason lines no longer repeat the heading they are listed under. A subtitle the engine rescaled past the framerate limit is reported as a failure rather than a rejection, and the audio check setting now says which rejections unticking it will release.",
         "targetAbi": "10.11.0.0",
