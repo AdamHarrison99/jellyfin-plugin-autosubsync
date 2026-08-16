@@ -325,7 +325,7 @@ public class SyncOrchestrator
                 TryDelete(attempt.ProducedPath);
                 return Fail(
                     record,
-                    $"Rejected: the sync engine rescaled the subtitle by {ratio:P1}, which matches "
+                    "Rejected: the sync engine rescaled the subtitle by a factor that matches "
                     + "no known framerate conversion.");
             }
 
@@ -380,8 +380,8 @@ public class SyncOrchestrator
                 return Fail(
                     record,
                     drifting
-                        ? $"Rejected: the audio check found the offset drifting across the runtime ({miss} ms)."
-                        : $"Rejected: the audio check found the subtitle out of alignment ({miss} ms).",
+                        ? "Rejected: the audio check found the offset drifting across the runtime."
+                        : "Rejected: the audio check found the subtitle out of alignment.",
                     miss,
                     SubtitleStageKind.Verify);
             }
@@ -404,8 +404,8 @@ public class SyncOrchestrator
 
                 return Fail(
                     record,
-                    $"Rejected: the sync stretched the subtitle by {Math.Abs(stretch)} ms and the "
-                    + "audio check could not confirm it.",
+                    "Rejected: the sync engine stretched the subtitle across the runtime and the "
+                    + "audio check did not measure that stretch.",
                     Math.Abs(stretch),
                     SubtitleStageKind.Verify);
             }
@@ -427,8 +427,8 @@ public class SyncOrchestrator
 
                 return Fail(
                     record,
-                    $"Rejected: the sync moved the subtitle {Math.Abs(shift)} ms and the audio "
-                    + "check could not confirm it.",
+                    "Rejected: the audio check reached no verdict and the sync engine moved the "
+                    + "subtitle too far to accept unconfirmed.",
                     Math.Abs(shift),
                     SubtitleStageKind.Verify);
             }
@@ -460,8 +460,7 @@ public class SyncOrchestrator
 
                     return Fail(
                         record,
-                        "Rejected: the audio check could not confirm this result, and it is set to "
-                        + "write only what it confirms.",
+                        "Rejected: the audio check reached no verdict on this title.",
                         null,
                         SubtitleStageKind.Verify);
                 }
@@ -755,7 +754,7 @@ public class SyncOrchestrator
         if (!invocation.TimedOut && invocation.Result is null && Complete(inputPath, scratchOutput))
         {
             _logger.LogWarning(
-                "The sync engine exited {Code} without reporting a result for {Item}, but wrote a complete subtitle; keeping it.",
+                "The sync engine exited {Code} without reporting a result for {Item} but wrote a complete subtitle, which was kept.",
                 invocation.ExitCode,
                 target.ItemName);
 

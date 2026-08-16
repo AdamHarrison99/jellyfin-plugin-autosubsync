@@ -141,10 +141,10 @@ public class SeConvRuntime : PayloadRuntime
             _reportedTesseract = true;
             _logger.LogError(
                 "\"Convert image-based subtitles to text\" is turned on, but Tesseract is not installed on this "
-                + "server, and OCR cannot run without it. Install Tesseract and the language data for the "
-                + "subtitles you want read, then restart Jellyfin. Installation instructions: {InstallDocs}. "
+                + "server, and OCR cannot run without it. Tesseract and the language data for the subtitles "
+                + "being read must be installed, then Jellyfin restarted. Installation instructions: {InstallDocs}. "
                 + "Looked for '{Executable}' on PATH and in: {Locations}. "
-                + "Until then image subtitles are reported as unsupported and everything else keeps working.",
+                + "Image subtitles are reported as unsupported until then.",
                 InstallDocsUrl,
                 TesseractExecutableName,
                 string.Join(", ", PlatformProbePaths));

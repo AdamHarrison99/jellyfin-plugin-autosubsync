@@ -181,7 +181,7 @@ public class AutoSubSyncController : ControllerBase
                 tesseract is not null,
                 tesseract is not null
                     ? $"Tesseract is installed at {tesseract}."
-                    : "Tesseract is not installed on this server. Install it, then restart Jellyfin."));
+                    : "Tesseract is not installed on this server. It must be installed and Jellyfin restarted."));
         }
 
         return dependencies;
@@ -281,7 +281,7 @@ public class AutoSubSyncController : ControllerBase
         // ! Rolling back while syncs are running would race the placer.
         if (_queue.InFlight > 0)
         {
-            return Conflict(new { Message = "Syncs are still running. Wait for them to finish." });
+            return Conflict(new { Message = "Syncs are still running." });
         }
 
         _logger.LogInformation("Rollback requested");
@@ -296,7 +296,7 @@ public class AutoSubSyncController : ControllerBase
         // ! Reopening a record the queue is working on would race its own write back.
         if (_queue.InFlight > 0)
         {
-            return Conflict(new { Message = "Syncs are still running. Wait for them to finish." });
+            return Conflict(new { Message = "Syncs are still running." });
         }
 
         var reopened = _store.ReopenFailed();

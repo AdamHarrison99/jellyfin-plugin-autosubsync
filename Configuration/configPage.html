@@ -258,7 +258,8 @@
                         <span>Only sync when audio check is conclusive</span>
                     </label>
                     <div class="fieldDescription">
-                        The audio check always runs. If it cannot confidently decide whether a subtitle is in sync, the plugin will not write it, when enabled. 
+                        The audio check always runs. When this is enabled, a subtitle it cannot
+                        confidently decide on is left alone rather than written.
                     </div>
 
                     <br />
@@ -277,7 +278,7 @@
                         <span>Process external subtitle files</span>
                     </label>
                     <div class="fieldDescription">
-                        Sidecar files sitting next to your media.
+                        Sidecar files next to your media.
                     </div>
 
                     <label class="checkboxContainer">
@@ -328,8 +329,8 @@
                         <span>Remove duplicate external subtitles</span>
                     </label>
                     <div class="fieldDescription">
-                        Subtitle files turn out to hold at least 85% the same text,
-                        styling, and format, are collapsed to one. Only external files are removed; a track inside
+                        Subtitle files that hold at least 85% the same text, styling, and format are
+                        collapsed to one. Only external files are removed; a track inside
                         the video is never touched. Every removed file is copied to the backup vault
                         first and is restored by "Roll back everything".
                     </div>
@@ -339,8 +340,8 @@
                         <input is="emby-input" type="text" id="txtLanguages" />
                         <div class="fieldDescription">
                             Comma-separated language codes (<code>eng, spa</code> or <code>en, es</code>).
-                            Two- and three-letter forms both work and can be mixed. Always processes subtitles with unknown languages. Leave empty for
-                            all languages.
+                            Two- and three-letter forms both work and can be mixed. Leave empty for
+                            all languages. Subtitles with an unknown language are always processed.
                         </div>
                     </div>
 
@@ -415,7 +416,7 @@
                     <span>Run full sync now</span>
                 </button>
                 <div class="fieldDescription belowControl">
-                    Starts the "Full Library Sync" scheduled task immediately. Takes a moment to get started, so be patient.
+                    Starts the "Full Library Sync" scheduled task immediately. The task takes a moment to begin.
                 </div>
 
                 <button is="emby-button" type="button" id="btnRetryFailed" class="raised">
