@@ -47,39 +47,34 @@ public class SubtitleDiscoveryService
 
         var candidates = new List<Candidate>();
 
-        // ! One candidate per file. Jellyfin can name the same sidecar twice, and a VobSub pair
-        //   arrives as two streams that resolve to one payload.
+        // ! One candidate per file and VobSub stream. Jellyfin can name the same sidecar twice,
+        //   and a VobSub pair arrives as two streams that resolve to one payload.
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var stream in streams)
         {
-            if (!PassesLanguageFilter(stream.Language, config))
+            foreach (var candidate in BuildCandidates(item, stream, config))
             {
-                continue;
-            }
+                if (SeenKey(candidate.Target) is { } key && !seen.Add(key))
+                {
+                    _logger.LogDebug(
+                        "{Item}: {Path} was offered more than once",
+                        item.Name,
+                        candidate.Target.SubtitlePath);
+                    continue;
+                }
 
-            var candidate = BuildCandidate(item, stream, config);
-            if (candidate is null)
-            {
-                continue;
-            }
+                if (!IsProcessable(candidate, config))
+                {
+                    _logger.LogDebug(
+                        "{Item}: skipping {Origin} track, disabled by configuration",
+                        item.Name,
+                        candidate.Target.Origin);
+                    continue;
+                }
 
-            if (candidate.Target.SubtitlePath is { } path && !seen.Add(path))
-            {
-                _logger.LogDebug("{Item}: {Path} was offered more than once", item.Name, path);
-                continue;
+                candidates.Add(candidate);
             }
-
-            if (!IsProcessable(candidate, config))
-            {
-                _logger.LogDebug(
-                    "{Item}: skipping {Origin} track, disabled by configuration",
-                    item.Name,
-                    candidate.Target.Origin);
-                continue;
-            }
-
-            candidates.Add(candidate);
         }
 
         if (config.SkipEmbeddedWhenExternalExists)
@@ -156,8 +151,15 @@ public class SubtitleDiscoveryService
         }
     }
 
-    private static string VariantFor(SubtitleTarget target)
+    internal static string VariantFor(SubtitleTarget target)
     {
+        // ! Ahead of the title. Every stream of one index carries the container's single title,
+        //   so a title-first variant names them all the same file.
+        if (target.VobSubStream is int vobSubStream)
+        {
+            return "vobsub" + vobSubStream.ToString(CultureInfo.InvariantCulture);
+        }
+
         if (!string.IsNullOrWhiteSpace(target.Title))
         {
             return target.Title;
@@ -168,16 +170,27 @@ public class SubtitleDiscoveryService
             : Path.GetFileNameWithoutExtension(target.SubtitlePath ?? string.Empty);
     }
 
-    private Candidate? BuildCandidate(BaseItem item, MediaStream stream, PluginConfiguration config)
-        => stream.IsExternal
-            ? BuildExternalCandidate(item, stream, config)
-            : BuildEmbeddedCandidate(item, stream, config);
+    // One stream of a VobSub index is its own unit of work, so one file can yield several.
+    private static string? SeenKey(SubtitleTarget target)
+        => target.SubtitlePath is { } path
+            ? path + "\0" + (target.VobSubStream?.ToString(CultureInfo.InvariantCulture) ?? string.Empty)
+            : null;
 
-    private Candidate? BuildExternalCandidate(BaseItem item, MediaStream stream, PluginConfiguration config)
+    private IEnumerable<Candidate> BuildCandidates(BaseItem item, MediaStream stream, PluginConfiguration config)
     {
+        if (!stream.IsExternal)
+        {
+            if (PassesLanguageFilter(stream.Language, config))
+            {
+                yield return BuildEmbeddedCandidate(item, stream, config);
+            }
+
+            yield break;
+        }
+
         if (string.IsNullOrEmpty(stream.Path))
         {
-            return null;
+            yield break;
         }
 
         var path = ResolveSidecarPath(stream.Path);
@@ -185,9 +198,87 @@ public class SubtitleDiscoveryService
         // Never re-sync our own output, and never let it occupy a slot.
         if (SubtitleNaming.IsPluginOutput(path, config.MarkerSuffix))
         {
-            return null;
+            yield break;
         }
 
+        var declared = DeclaredVobSubStreams(path);
+
+        if (declared.Count == 0)
+        {
+            if (PassesLanguageFilter(stream.Language, config))
+            {
+                var single = BuildExternalCandidate(item, stream, config, path);
+                if (single is not null)
+                {
+                    yield return single;
+                }
+            }
+
+            yield break;
+        }
+
+        // ! Filter on what the index declares, never on the container's one language. Jellyfin
+        //   reports a single language for the pair, which would drop every other stream unseen.
+        foreach (var track in declared)
+        {
+            if (PassesLanguageFilter(track.Language, config))
+            {
+                yield return BuildVobSubCandidate(item, stream, config, path, track);
+            }
+        }
+    }
+
+    // The streams a paired index declares, and only where it declares more than one.
+    private static IReadOnlyList<VobSubTrack> DeclaredVobSubStreams(string path)
+    {
+        if (!string.Equals(Path.GetExtension(path), ".sub", StringComparison.OrdinalIgnoreCase))
+        {
+            return [];
+        }
+
+        var index = VobSubIndex.IndexFor(path);
+        if (!File.Exists(index))
+        {
+            return [];
+        }
+
+        var tracks = VobSubIndex.Read(index);
+        return tracks.Count > 1 ? tracks : [];
+    }
+
+    private static Candidate BuildVobSubCandidate(
+        BaseItem item,
+        MediaStream stream,
+        PluginConfiguration config,
+        string path,
+        VobSubTrack track)
+    {
+        var target = new SubtitleTarget
+        {
+            ItemId = item.Id,
+            ItemName = item.Name,
+            VideoPath = item.Path,
+            Origin = SubtitleOrigin.External,
+            SubtitlePath = path,
+            Language = track.Language,
+            Codec = stream.Codec,
+            IsForced = stream.IsForced,
+            IsHearingImpaired = stream.IsHearingImpaired,
+            Title = stream.Title,
+            VobSubStream = track.Index,
+            Key = SubtitleTarget.ExternalStreamKey(item.Path, path, track.Index)
+        };
+
+        MarkImageTrack(target, "VobSub", config);
+        return new Candidate(target, SubtitleSourceRank.ExternalImage, IsExternal: true);
+    }
+
+    private Candidate? BuildExternalCandidate(
+        BaseItem item,
+        MediaStream stream,
+        PluginConfiguration config,
+        string path)
+    {
         var target = new SubtitleTarget
         {
             ItemId = item.Id,

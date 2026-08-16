@@ -32,6 +32,9 @@ public class SubtitleTarget
     // Set only when one item carries several tracks sharing this language and flag set.
     public string? Variant { get; set; }
 
+    // Set only for one language stream of a VobSub index that declares several.
+    public int? VobSubStream { get; set; }
+
     // Stable store key, unique within an item and stable across rescans.
     public string Key { get; set; } = string.Empty;
 
@@ -47,6 +50,11 @@ public class SubtitleTarget
         var relative = System.IO.Path.GetRelativePath(dir, subtitlePath);
         return "ext:" + relative.Replace('\\', '/');
     }
+
+    // ! Only for an index declaring several streams. A single-stream VobSub keeps ExternalKey,
+    //   so the store records it already holds stay addressable.
+    public static string ExternalStreamKey(string videoPath, string subtitlePath, int streamIndex)
+        => ExternalKey(videoPath, subtitlePath) + "#" + streamIndex.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
     public static string EmbeddedKey(int streamIndex, string? codec)
         => $"emb:{streamIndex}:{codec ?? "unknown"}";

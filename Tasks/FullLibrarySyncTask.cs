@@ -20,6 +20,7 @@ public class FullLibrarySyncTask : IScheduledTask
     private readonly AssyRuntime _runtime;
     private readonly ILibraryManager _libraryManager;
     private readonly SyncCancellation _cancellation;
+    private readonly VobSubStaging _vobSub;
     private readonly ILogger<FullLibrarySyncTask> _logger;
 
     public FullLibrarySyncTask(
@@ -33,8 +34,10 @@ public class FullLibrarySyncTask : IScheduledTask
         AssyRuntime runtime,
         ILibraryManager libraryManager,
         SyncCancellation cancellation,
+        VobSubStaging vobSub,
         ILogger<FullLibrarySyncTask> logger)
     {
+        _vobSub = vobSub;
         _scopeResolver = scopeResolver;
         _discovery = discovery;
         _orchestrator = orchestrator;
@@ -68,6 +71,9 @@ public class FullLibrarySyncTask : IScheduledTask
             _logger.LogWarning("Plugin configuration unavailable; skipping full library sync");
             return;
         }
+
+        // Staged VobSub payloads outlive the scan that made them.
+        _vobSub.Sweep();
 
         // ! Check readiness once. Per-item failures would be thousands of rows for one problem.
         var status = await _runtime.EnsureReadyAsync(cancellationToken).ConfigureAwait(false);

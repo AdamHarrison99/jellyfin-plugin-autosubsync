@@ -31,6 +31,11 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<ImageSubtitleExtractor>();
         serviceCollection.AddSingleton<SubtitleDiscoveryService>();
         serviceCollection.AddSingleton<SubtitlePlacer>();
+        serviceCollection.AddSingleton(sp => new VobSubStaging(
+            System.IO.Path.Combine(
+                sp.GetRequiredService<MediaBrowser.Common.Configuration.IApplicationPaths>().TempDirectory,
+                "AutoSubSync"),
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<VobSubStaging>>()));
 
         serviceCollection.AddSingleton<LibraryScopeResolver>();
         serviceCollection.AddSingleton<ItemChangeGate>();

@@ -1,6 +1,7 @@
 ﻿using System.Diagnostics;
 using System.Globalization;
 using System.Text.RegularExpressions;
+using Jellyfin.Plugin.AutoSubSync.Configuration;
 using Jellyfin.Plugin.AutoSubSync.Subtitles;
 using MediaBrowser.Controller.MediaEncoding;
 using Microsoft.Extensions.Logging;
@@ -135,10 +136,35 @@ public partial class SyncVerifier
         var onsets = new List<long>();
         var used = 0;
 
+        // ! One budget for the whole read, never one per window. Sixteen windows each granted the
+        //   full timeout is hours of a queue slot behind a stalled mount.
+        var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+        if (config.PerSyncTimeoutMinutes > 0)
+        {
+            budget.CancelAfter(TimeSpan.FromMinutes(config.PerSyncTimeoutMinutes));
+        }
+
         foreach (var window in windows)
         {
-            var found = await OnsetsAsync(ffmpegPath, videoPath, window, cancellationToken)
-                .ConfigureAwait(false);
+            List<long>? found;
+
+            try
+            {
+                found = await OnsetsAsync(ffmpegPath, videoPath, window, budget.Token)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                // Score what was read; the usability test below decides whether it is enough.
+                _logger.LogWarning(
+                    "The audio read for {Video} ran out of time after {Used} of {Planned} windows",
+                    videoPath,
+                    used,
+                    windows.Count);
+                break;
+            }
 
             if (found is null)
             {

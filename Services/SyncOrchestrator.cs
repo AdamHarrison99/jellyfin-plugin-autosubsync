@@ -43,6 +43,7 @@ public class SyncOrchestrator
     private readonly IApplicationPaths _applicationPaths;
     private readonly SyncVerifier _verifier;
     private readonly SubtitlePlacer _placer;
+    private readonly VobSubStaging _vobSub;
     private readonly ILogger<SyncOrchestrator> _logger;
 
     public SyncOrchestrator(
@@ -59,9 +60,11 @@ public class SyncOrchestrator
         IFileSystem fileSystem,
         IApplicationPaths applicationPaths,
         SubtitlePlacer placer,
+        VobSubStaging vobSub,
         ILogger<SyncOrchestrator> logger)
     {
         _applicationPaths = applicationPaths;
+        _vobSub = vobSub;
         _runner = runner;
         _extractor = extractor;
         _imageExtractor = imageExtractor;
@@ -600,6 +603,21 @@ public class SyncOrchestrator
                 .ExtractAsync(target.VideoPath, target.StreamIndex!.Value, target.Codec, cancellationToken)
                 .ConfigureAwait(false));
 
+        // ! One stream of a multi-stream index, never the whole payload. Handing over the pair
+        //   converts every language it declares into one file.
+        if (source is not null && target.VobSubStream is { } vobSubStream)
+        {
+            source = await _vobSub.StageAsync(source, vobSubStream, cancellationToken).ConfigureAwait(false);
+
+            if (source is null)
+            {
+                return FailStage(
+                    record,
+                    "Failed: the VobSub stream could not be prepared for reading.",
+                    SubtitleStageKind.Convert);
+            }
+        }
+
         if (string.IsNullOrEmpty(source) || !File.Exists(source))
         {
             return FailStage(
@@ -1056,13 +1074,16 @@ public class SyncOrchestrator
         _logger.LogWarning("Sync failed for {Item}: {Reason}", record.ItemName, Reason(message));
     }
 
-    // The message without its leading action word, which the log line supplies itself.
+    // ! The message without its leading action word, which the log line supplies itself. Only a
+    //   single bare word counts; an engine dump carries colons of its own and is left whole.
     private static string Reason(string? message)
     {
         var text = message ?? string.Empty;
         var split = text.IndexOf(": ", StringComparison.Ordinal);
 
-        return split > 0 ? text[(split + 2)..] : text;
+        return split > 0 && text.AsSpan(0, split).IndexOfAny(' ', '\r', '\n') < 0
+            ? text[(split + 2)..]
+            : text;
     }
 
     // Returns null so a stage can hand its failure straight back to the pipeline.
