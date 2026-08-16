@@ -192,6 +192,10 @@
                 color: #d9534f;
             }
 
+            #AutoSubSyncConfigPage .stat.isRejected .statValue {
+                color: #f0ad4e;
+            }
+
             #AutoSubSyncConfigPage .stat.isActive .statValue {
                 color: #00a4dc;
             }
@@ -230,6 +234,10 @@
 
             #AutoSubSyncConfigPage .stageTable td.isFailed {
                 color: #d9534f;
+            }
+
+            #AutoSubSyncConfigPage .stageTable td.isRejected {
+                color: #f0ad4e;
             }
 
             #AutoSubSyncConfigPage .statusReasons {
@@ -630,7 +638,7 @@
                         + statCard(status.Synced, 'synced')
                         + statCard(formatOffset(status.MedianAppliedOffsetMs), 'median shift')
                         + statCard(status.Skipped, 'already in sync')
-                        + statCard(status.Rejected, 'rejected by audio check', status.Rejected ? 'isFailed' : '')
+                        + statCard(status.Rejected, 'rejected by audio check', status.Rejected ? 'isRejected' : '')
                         + statCard(status.Failed, 'failed', status.Failed ? 'isFailed' : '')
                         + statCard(status.SourceMissing, 'source gone')
                         + statCard(status.Unsupported, 'unsupported')
@@ -646,7 +654,7 @@
                         + '<td>' + escapeHtml(stageLabels[stage.Kind] || stage.Kind) + '</td>'
                         + '<td class="num">' + escapeHtml(stage.Succeeded) + '</td>'
                         + '<td class="num">' + escapeHtml(stage.Skipped) + '</td>'
-                        + '<td class="num' + (stage.Rejected ? ' isFailed' : '') + '">' + escapeHtml(stage.Rejected) + '</td>'
+                        + '<td class="num' + (stage.Rejected ? ' isRejected' : '') + '">' + escapeHtml(stage.Rejected) + '</td>'
                         + '<td class="num' + (stage.Failed ? ' isFailed' : '') + '">' + escapeHtml(stage.Failed) + '</td>'
                         + '<td class="num">' + escapeHtml(stage.AverageMs ? formatDuration(stage.AverageMs) : '—') + '</td>'
                         + '</tr>';
