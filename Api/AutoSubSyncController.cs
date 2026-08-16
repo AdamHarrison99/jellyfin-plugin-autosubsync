@@ -75,6 +75,7 @@ public class AutoSubSyncController : ControllerBase
             Dependencies = SummarizeDependencies(config),
 
             InFlight = _queue.InFlight,
+            // ! The cards do not sum to this. A SetAside row is counted here and on none of them.
             Total = records.Count,
             Synced = records.Count(r => r.Status == SyncStatus.Synced),
             MedianAppliedOffsetMs = MedianAppliedOffset(records),
@@ -86,7 +87,7 @@ public class AutoSubSyncController : ControllerBase
                 r.Status == SyncStatus.Skipped && !SyncOutcome.NothingToDo(r)),
             DryRun = records.Count(r => r.Status == SyncStatus.DryRun),
             Unsupported = records.Count(r => r.Status == SyncStatus.Unsupported),
-            // ! Counted so the cards add up to Total. A payload fetch and a retry both park here.
+            // A payload fetch and a retry both park here.
             Waiting = records.Count(r => r.Status == SyncStatus.Pending),
 
             Stages = SummarizeStages(stored, config),

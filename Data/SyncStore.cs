@@ -386,7 +386,7 @@ public class SyncStore : ISyncStore, IDisposable
             record.Stages.Add(new SubtitleStage
             {
                 Kind = SubtitleStageKind.Sync,
-                Outcome = OutcomeFor(record.Status),
+                Outcome = SyncOutcome.StageFor(record.Status),
                 Tool = record.ToolUsed,
                 Message = record.Message,
                 ElapsedMs = record.ElapsedMs,
@@ -439,14 +439,6 @@ public class SyncStore : ISyncStore, IDisposable
 
         return new RemeasureReport(stamped, reopened);
     }
-
-    private static StageOutcome OutcomeFor(SyncStatus status) => status switch
-    {
-        SyncStatus.Synced => StageOutcome.Succeeded,
-        SyncStatus.Skipped => StageOutcome.Skipped,
-        SyncStatus.Unsupported => StageOutcome.Skipped,
-        _ => StageOutcome.Failed
-    };
 
     private List<SyncRecord> LoadBackup()
     {

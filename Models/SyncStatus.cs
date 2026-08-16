@@ -14,5 +14,8 @@ public enum SyncStatus
     Skipped = 4,
 
     // The plugin cannot process this track at all.
-    Unsupported = 5
+    Unsupported = 5,
+
+    // A setting left the track alone; another track already covers it.
+    SetAside = 6
 }

@@ -98,7 +98,7 @@ public class SyncOrchestrator
             //   a row left exhausted by an older run would never restamp.
             if (target.UnsupportedReason is { } reason)
             {
-                record.Status = SyncStatus.Unsupported;
+                record.Status = target.SetAside ? SyncStatus.SetAside : SyncStatus.Unsupported;
                 record.Message = reason;
 
                 // A bitmap track belongs on the OCR row, whether or not it was read.
@@ -184,14 +184,7 @@ public class SyncOrchestrator
             return;
         }
 
-        var outcome = record.Status switch
-        {
-            SyncStatus.Synced => StageOutcome.Succeeded,
-            SyncStatus.Skipped or SyncStatus.Unsupported => StageOutcome.Skipped,
-            _ => StageOutcome.Failed
-        };
-
-        var stage = record.RecordStage(kind, outcome, record.ToolUsed);
+        var stage = record.RecordStage(kind, SyncOutcome.StageFor(record.Status), record.ToolUsed);
         stage.Message = record.Message;
         stage.ElapsedMs = record.ElapsedMs;
     }

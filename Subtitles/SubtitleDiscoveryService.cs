@@ -126,6 +126,7 @@ public class SubtitleDiscoveryService
 
             candidate.Target.UnsupportedReason =
                 "An external subtitle in this language already covers this embedded track.";
+            candidate.Target.SetAside = true;
 
             _logger.LogDebug(
                 "{Item}: setting aside embedded track {Index}, an external {Language} subtitle covers it",
@@ -153,6 +154,7 @@ public class SubtitleDiscoveryService
 
             candidate.Target.UnsupportedReason =
                 "A text subtitle in this language already serves this track, so it was not read.";
+            candidate.Target.SetAside = true;
 
             _logger.LogDebug(
                 "{Item}: setting aside the OCR for the {Language} track, a text subtitle serves it",

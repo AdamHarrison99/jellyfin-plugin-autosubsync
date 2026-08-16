@@ -18,6 +18,14 @@ public static class SyncOutcome
         => record.Status == SyncStatus.Skipped
            && (record.AlignedAtMs is not null || record.SkippedMovementMs is not null);
 
+    // ! The one map from a stored status to a stage outcome. Pending and DryRun never reach it.
+    public static StageOutcome StageFor(SyncStatus status) => status switch
+    {
+        SyncStatus.Synced => StageOutcome.Succeeded,
+        SyncStatus.Skipped or SyncStatus.Unsupported or SyncStatus.SetAside => StageOutcome.Skipped,
+        _ => StageOutcome.Failed
+    };
+
     // The cards describe the library as it is now.
     public static bool OnCards(SyncRecord record) => !record.Stale && !record.Retired;
 

@@ -41,6 +41,9 @@ public class SubtitleTarget
     // Set when the track was discovered but cannot be processed.
     public string? UnsupportedReason { get; set; }
 
+    // ! Marks a suppression a setting can lift, never a limit of the plugin.
+    public bool SetAside { get; set; }
+
     // Bitmap track needing OCR before any engine can read it.
     public bool RequiresOcr { get; set; }
 
