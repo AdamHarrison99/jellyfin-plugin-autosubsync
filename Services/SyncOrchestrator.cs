@@ -1014,7 +1014,13 @@ public class SyncOrchestrator
             target.ItemName,
             target.Key);
 
-        SafeUpsert(record);
+        // ! The stage the adopted verdict came from. A refusal stamped on Sync files itself
+        //   under the pipeline row for synchronization.
+        SafeUpsert(
+            record,
+            SyncOutcome.IsAudioRefusal(record)
+                ? SubtitleStageKind.Verify
+                : SubtitleStageKind.Sync);
         return record;
     }
 
