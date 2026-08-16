@@ -18,6 +18,12 @@ public static class SyncOutcome
         => record.Status == SyncStatus.Skipped
            && (record.AlignedAtMs is not null || record.SkippedMovementMs is not null);
 
+    // The cards describe the library as it is now.
+    public static bool OnCards(SyncRecord record) => !record.Stale && !record.Retired;
+
+    // ! The stage table describes work that ran, and a row the plugin closed itself still ran.
+    public static bool OnStageTable(SyncRecord record) => !record.Stale;
+
     // ! Rows written before the flag only. A stage can outlive the run that wrote it.
     private static bool InferredRefusal(SyncRecord record)
         => record.RejectedOffsetMs is not null

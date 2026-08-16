@@ -53,6 +53,9 @@ public class SyncRecord
     //   survives as rollback's only pointer.
     public bool Stale { get; set; }
 
+    // ! The plugin itself ended this row's life. Off the cards, still on the stage table.
+    public bool Retired { get; set; }
+
     // ! Bump when the offset measurement changes. A record below it has its rejection re-opened.
     public const int CurrentMeasurementVersion = 1;
 

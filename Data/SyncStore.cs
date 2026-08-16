@@ -194,9 +194,9 @@ public class SyncStore : ISyncStore, IDisposable
 
         foreach (var record in records)
         {
-            // ! Stale rows describe targets nothing offers. Reopening one queues work that
-            //   can never run.
-            if (record.Status != SyncStatus.Failed || record.Stale)
+            // ! Stale rows describe targets nothing offers, retired ones a file the plugin
+            //   deleted. Reopening either queues work that can never run.
+            if (record.Status != SyncStatus.Failed || record.Stale || record.Retired)
             {
                 continue;
             }
@@ -301,6 +301,14 @@ public class SyncStore : ISyncStore, IDisposable
                 _logger.LogInformation("Gave {Count} records from an earlier version a Sync stage", migrated);
             }
 
+            var retired = RetireRemovedDuplicates(records);
+            if (retired > 0)
+            {
+                _dirty = true;
+                _logger.LogInformation(
+                    "Restored {Count} duplicate removals to the pipeline table", retired);
+            }
+
             var remeasured = Remeasure(records);
             if (remeasured.Stamped > 0)
             {
@@ -324,6 +332,41 @@ public class SyncStore : ISyncStore, IDisposable
         }
     }
 
+    // ! The removal message, ¬the stage kind. Canonicalize stamped the same kind and outcome on
+    //   the survivor it renamed, and that row records no removal.
+    internal const string RemovedAsDuplicate = "Removed as a duplicate of ";
+
+    // Moves a removal the old code marked Stale onto Retired, where the stage table can see it.
+    internal static int RetireRemovedDuplicates(List<SyncRecord> records)
+    {
+        var retired = 0;
+
+        foreach (var record in records)
+        {
+            if (!record.Stale || record.Retired || record.Stages is null)
+            {
+                continue;
+            }
+
+            var removed = record.Stages.Any(s =>
+                s.Kind == SubtitleStageKind.Deduplicate
+                && s.Outcome == StageOutcome.Succeeded
+                && s.Message is not null
+                && s.Message.StartsWith(RemovedAsDuplicate, StringComparison.Ordinal));
+
+            if (!removed)
+            {
+                continue;
+            }
+
+            record.Stale = false;
+            record.Retired = true;
+            retired++;
+        }
+
+        return retired;
+    }
+
     // Gives a record written before the staged pipeline the Sync stage it implicitly had.
     internal static int Migrate(List<SyncRecord> records)
     {
@@ -333,8 +376,9 @@ public class SyncStore : ISyncStore, IDisposable
         {
             record.Stages ??= new List<SubtitleStage>();
 
-            // A Pending record never completed a stage.
-            if (record.Stages.Count > 0 || record.Status == SyncStatus.Pending)
+            // Neither a Pending nor a dry-run record ever completed a stage.
+            if (record.Stages.Count > 0
+                || record.Status is SyncStatus.Pending or SyncStatus.DryRun)
             {
                 continue;
             }
@@ -373,7 +417,12 @@ public class SyncStore : ISyncStore, IDisposable
             record.MeasurementVersion = SyncRecord.CurrentMeasurementVersion;
             stamped++;
 
-            if (record.Status != SyncStatus.Failed || record.RejectedOffsetMs is null)
+            // ! Same bar as ReopenFailed. A row nothing will offer again parks on Pending and
+            //   is counted as waiting for work that will never be queued.
+            if (record.Status != SyncStatus.Failed
+                || record.RejectedOffsetMs is null
+                || record.Stale
+                || record.Retired)
             {
                 continue;
             }
@@ -395,7 +444,6 @@ public class SyncStore : ISyncStore, IDisposable
     {
         SyncStatus.Synced => StageOutcome.Succeeded,
         SyncStatus.Skipped => StageOutcome.Skipped,
-        SyncStatus.DryRun => StageOutcome.Skipped,
         SyncStatus.Unsupported => StageOutcome.Skipped,
         _ => StageOutcome.Failed
     };

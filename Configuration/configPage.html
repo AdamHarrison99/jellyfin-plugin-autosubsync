@@ -113,6 +113,12 @@
                 margin: 1.4em 0 0.5em 0;
             }
 
+            #AutoSubSyncConfigPage .statusAsOf {
+                margin-top: 1.4em;
+                font-size: 82%;
+                opacity: 0.5;
+            }
+
             #AutoSubSyncConfigPage .statusEngine {
                 margin-top: 0.7em;
                 padding: 0.5em 0.75em;
@@ -291,6 +297,7 @@
                     </table>
 
                     <div id="statusUnsupported"></div>
+                    <div id="statusAsOf" class="statusAsOf"></div>
                 </div>
 
                 <form id="AutoSubSyncConfigForm">
@@ -624,12 +631,27 @@
                         (dependencies || []).map(dependencyRow).join('');
                 }
 
+                // ! Tested on the magnitude. Signed, -1200 falls under the second threshold and
+                //   renders as milliseconds where +1200 renders as seconds.
                 function formatOffset(ms) {
                     if (ms === null || ms === undefined) {
                         return '—';
                     }
 
-                    return ms < 1000 ? ms + 'ms' : (ms / 1000).toFixed(1) + 's';
+                    return Math.abs(ms) < 1000 ? ms + 'ms' : (ms / 1000).toFixed(1) + 's';
+                }
+
+                // ! Stamped UTC. A value serialized without its zone parses as local time and
+                //   the panel reports itself hours fresher or staler than it is.
+                function formatAsOf(value) {
+                    if (!value) {
+                        return '';
+                    }
+
+                    var text = /(Z|[+-]\d{2}:?\d{2})$/.test(value) ? value : value + 'Z';
+                    var when = new Date(text);
+
+                    return isNaN(when.getTime()) ? '' : 'Counts as of ' + when.toLocaleString() + '.';
                 }
 
                 function renderCounts(page, status) {
@@ -642,7 +664,7 @@
                         + statCard(status.Failed, 'failed', status.Failed ? 'isFailed' : '')
                         + statCard(status.SourceMissing, 'source gone')
                         + statCard(status.Unsupported, 'unsupported')
-                        + statCard(status.Waiting, 'not yet run')
+                        + statCard(status.Waiting, 'waiting')
                         + statCard(status.DryRun, 'pending dry run')
                         + statCard(status.InFlight, 'running now', status.InFlight ? 'isActive' : '');
                 }
@@ -713,6 +735,9 @@
                             reasonBlock('Unsupported tracks', status.UnsupportedReasons)
                             + reasonBlock('Rejected by audio check', status.RefusalReasons)
                             + reasonBlock('Failure reasons', status.FailureReasons);
+
+                        page.querySelector('#statusAsOf').textContent =
+                            formatAsOf(status.LastRecordUpdateUtc);
 
                         page.querySelector('#statusPanel').style.display = '';
                         scheduleStatus(page, status.InFlight ? busyInterval : idleInterval);

@@ -94,20 +94,26 @@ public class SyncOrchestrator
 
         try
         {
+            // ! Ahead of IsExhausted. This describes the target as discovery offers it now, and
+            //   a row left exhausted by an older run would never restamp.
+            if (target.UnsupportedReason is { } reason)
+            {
+                record.Status = SyncStatus.Unsupported;
+                record.Message = reason;
+
+                // A bitmap track belongs on the OCR row, whether or not it was read.
+                SafeUpsert(
+                    record,
+                    target.RequiresOcr ? SubtitleStageKind.Convert : SubtitleStageKind.Sync);
+                return record;
+            }
+
             if (IsExhausted(record, target, config))
             {
                 _logger.LogDebug(
                     "{Item} ({Key}) failed and is unchanged since",
                     target.ItemName,
                     target.Key);
-                return record;
-            }
-
-            if (target.UnsupportedReason is { } reason)
-            {
-                record.Status = SyncStatus.Unsupported;
-                record.Message = reason;
-                SafeUpsert(record);
                 return record;
             }
 
@@ -172,7 +178,8 @@ public class SyncOrchestrator
     // One funnel for every exit path, so no outcome reaches the store without its stage.
     private static void StampStage(SyncRecord record, SubtitleStageKind kind)
     {
-        if (record.Status == SyncStatus.Pending)
+        // ! Neither has run a step. A dry run stamped here reads as "already in sync".
+        if (record.Status is SyncStatus.Pending or SyncStatus.DryRun)
         {
             return;
         }
@@ -180,7 +187,7 @@ public class SyncOrchestrator
         var outcome = record.Status switch
         {
             SyncStatus.Synced => StageOutcome.Succeeded,
-            SyncStatus.Skipped or SyncStatus.DryRun or SyncStatus.Unsupported => StageOutcome.Skipped,
+            SyncStatus.Skipped or SyncStatus.Unsupported => StageOutcome.Skipped,
             _ => StageOutcome.Failed
         };
 

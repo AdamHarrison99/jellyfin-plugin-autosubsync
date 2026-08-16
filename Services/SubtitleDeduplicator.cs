@@ -123,6 +123,12 @@ public class SubtitleDeduplicator
 
         foreach (var target in targets)
         {
+            // ! Never processed, so it has no output to compare and cannot poison the slot.
+            if (target.UnsupportedReason is not null)
+            {
+                continue;
+            }
+
             var slot = new SubtitleSlot(
                 LanguageCodes.Normalize(target.Language) ?? string.Empty,
                 target.IsForced,
@@ -230,10 +236,14 @@ public class SubtitleDeduplicator
 
         record.BackupPath ??= backup;
 
-        // ! The file this row describes is gone. It stops counting now, ¬on the next scan.
-        record.Stale = true;
+        // ! Retired, ¬Stale: off the cards now, but the removal stays on the stage table.
+        record.Retired = true;
 
-        MarkStage(record, StageOutcome.Succeeded, $"Removed as a duplicate of {Path.GetFileName(keeperPath)}.");
+        // ! Shared w/ the store, which identifies a removal by this text when it retires one.
+        MarkStage(
+            record,
+            StageOutcome.Succeeded,
+            SyncStore.RemovedAsDuplicate + Path.GetFileName(keeperPath) + ".");
 
         _logger.LogInformation(
             "Removed {Duplicate} ({Content:P0} the same text and {Formatting:P0} the same styling as {Keeper}); it is in the backup vault",
@@ -279,10 +289,9 @@ public class SubtitleDeduplicator
             keeper.Path,
             canonical);
 
-        MarkStage(
-            keeper.Record,
-            StageOutcome.Succeeded,
-            $"Renamed to {Path.GetFileName(canonical)} once its duplicates were removed.");
+        // ! Saved, ¬staged. The row counts duplicates removed, and a rename removed none; the
+        //   save is still required or rollback loses where to put the backup.
+        Save(keeper.Record);
     }
 
     // "movie.eng.0.srt" -> "movie.eng.srt". Two digits at most, so a year is never taken for one.
@@ -306,11 +315,16 @@ public class SubtitleDeduplicator
         return Path.Combine(directory, stem[..cut] + Path.GetExtension(path));
     }
 
-    // ! A store failure must not abort the sweep that called this.
     private void MarkStage(SyncRecord record, StageOutcome outcome, string message)
     {
         var stage = record.RecordStage(SubtitleStageKind.Deduplicate, outcome);
         stage.Message = message;
+        Save(record);
+    }
+
+    // ! A store failure must not abort the sweep that called this.
+    private void Save(SyncRecord record)
+    {
         record.UpdatedUtc = DateTime.UtcNow;
 
         try

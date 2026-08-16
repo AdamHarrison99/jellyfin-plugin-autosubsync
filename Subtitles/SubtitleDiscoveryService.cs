@@ -80,12 +80,12 @@ public class SubtitleDiscoveryService
 
         if (!config.ProcessEmbeddedWhenExternalExists)
         {
-            DropCoveredEmbedded(candidates, item);
+            SuppressCoveredEmbedded(candidates, item);
         }
 
         if (!config.RunOcrWhenTextExists)
         {
-            DropOcrCoveredByText(candidates, item);
+            SuppressOcrCoveredByText(candidates, item);
         }
 
         AssignVariants(candidates);
@@ -102,8 +102,8 @@ public class SubtitleDiscoveryService
     private static bool IsProcessable(Candidate candidate, PluginConfiguration config)
         => candidate.IsExternal ? config.ProcessExternalSubtitles : config.ProcessEmbeddedSubtitles;
 
-    // ! Opt-in, and it discards signs-and-songs tracks along with the rest.
-    private void DropCoveredEmbedded(List<Candidate> candidates, BaseItem item)
+    // ! Opt-in, and it sets aside signs-and-songs tracks along with the rest.
+    private void SuppressCoveredEmbedded(List<Candidate> candidates, BaseItem item)
     {
         var covered = candidates
             .Where(c => c.IsExternal && c.Target.UnsupportedReason is null)
@@ -115,43 +115,50 @@ public class SubtitleDiscoveryService
             return;
         }
 
-        candidates.RemoveAll(c =>
+        foreach (var candidate in candidates)
         {
-            if (c.IsExternal || !covered.Contains(LanguageKey(c.Target.Language)))
+            if (candidate.IsExternal
+                || candidate.Target.UnsupportedReason is not null
+                || !covered.Contains(LanguageKey(candidate.Target.Language)))
             {
-                return false;
+                continue;
             }
 
+            candidate.Target.UnsupportedReason =
+                "An external subtitle in this language already covers this embedded track.";
+
             _logger.LogDebug(
-                "{Item}: skipping embedded track {Index}, an external {Language} subtitle covers it",
+                "{Item}: setting aside embedded track {Index}, an external {Language} subtitle covers it",
                 item.Name,
-                c.Target.StreamIndex,
-                c.Target.Language ?? "unlabelled");
-            return true;
-        });
+                candidate.Target.StreamIndex,
+                candidate.Target.Language ?? "unlabelled");
+        }
     }
 
     private static string LanguageKey(string? language)
         => LanguageCodes.Normalize(language) ?? string.Empty;
 
     // ! Slot, ¬language. A signs track carries the language of the full one and has to survive.
-    private void DropOcrCoveredByText(List<Candidate> candidates, BaseItem item)
+    private void SuppressOcrCoveredByText(List<Candidate> candidates, BaseItem item)
     {
         var all = candidates.Select(c => c.Target).ToList();
 
-        candidates.RemoveAll(c =>
+        foreach (var candidate in candidates)
         {
-            if (!TextCovers(c.Target, all))
+            if (candidate.Target.UnsupportedReason is not null
+                || !TextCovers(candidate.Target, all))
             {
-                return false;
+                continue;
             }
 
+            candidate.Target.UnsupportedReason =
+                "A text subtitle in this language already serves this track, so it was not read.";
+
             _logger.LogDebug(
-                "{Item}: skipping the OCR for the {Language} track, a text subtitle serves it",
+                "{Item}: setting aside the OCR for the {Language} track, a text subtitle serves it",
                 item.Name,
-                c.Target.Language ?? "unlabelled");
-            return true;
-        });
+                candidate.Target.Language ?? "unlabelled");
+        }
     }
 
     // True when a readable track already serves this bitmap's slot.

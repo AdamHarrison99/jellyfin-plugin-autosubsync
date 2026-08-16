@@ -63,9 +63,11 @@ public class AutoSubSyncController : ControllerBase
     [ProducesResponseType(StatusCodes.Status200OK)]
     public ActionResult<object> GetStatus()
     {
-        // ! One population. A card filtered apart from the stage table is how FAILED came to
-        //   disagree with failed.
-        var records = _store.GetAll().Where(r => !r.Stale).ToList();
+        // ! Retired is the only split allowed between these two. Any other is how FAILED came
+        //   to disagree with failed.
+        var all = _store.GetAll();
+        var stored = all.Where(SyncOutcome.OnStageTable).ToList();
+        var records = all.Where(SyncOutcome.OnCards).ToList();
         var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
 
         return Ok(new
@@ -87,13 +89,14 @@ public class AutoSubSyncController : ControllerBase
             // ! Counted so the cards add up to Total. A payload fetch and a retry both park here.
             Waiting = records.Count(r => r.Status == SyncStatus.Pending),
 
-            Stages = SummarizeStages(records, config),
+            Stages = SummarizeStages(stored, config),
 
             UnsupportedReasons = records
                 .Where(r => r.Status == SyncStatus.Unsupported && r.Message is not null)
                 .GroupBy(r => WithoutStatusPrefix(r.Message!))
                 .OrderByDescending(g => g.Count())
                 .Select(g => new { Reason = g.Key, Count = g.Count() })
+                .Take(ReasonLimit)
                 .ToList(),
 
             // Split the same way the cards are; one list over both would total neither.
@@ -101,9 +104,14 @@ public class AutoSubSyncController : ControllerBase
             FailureReasons = Reasons(records.Where(r =>
                 r.Status == SyncStatus.Failed && !SyncOutcome.IsAudioRefusal(r))),
 
-            LastRecordUpdateUtc = records.Count == 0 ? null : records.Max(r => (DateTime?)r.UpdatedUtc)
+            // Over everything the panel draws from, so a removal counts as activity.
+            LastRecordUpdateUtc = stored.Count == 0 ? null : stored.Max(r => (DateTime?)r.UpdatedUtc)
         });
     }
+
+    // ! High enough never to cut a real list. The valve is for a message that stops collapsing
+    //   into its group and renders one row per subtitle.
+    private const int ReasonLimit = 100;
 
     private static object Reasons(IEnumerable<SyncRecord> records)
         => records
@@ -111,7 +119,7 @@ public class AutoSubSyncController : ControllerBase
             .GroupBy(r => Summarize(r.Message!))
             .OrderByDescending(g => g.Count())
             .Select(g => new { Reason = g.Key, Count = g.Count() })
-            .Take(8)
+            .Take(ReasonLimit)
             .ToList();
 
     private static readonly string[] StatusPrefixes =
@@ -180,12 +188,13 @@ public class AutoSubSyncController : ControllerBase
         return builder.ToString();
     }
 
-    // The typical correction, over runs whose result was kept.
+    // ! Magnitude, ¬direction, over runs whose result was kept. Signed, an early subtitle
+    //   cancels a late one.
     private static long? MedianAppliedOffset(List<SyncRecord> records)
     {
         var applied = records
             .Where(r => r.Status == SyncStatus.Synced && r.AppliedOffsetMs is not null)
-            .Select(r => r.AppliedOffsetMs!.Value)
+            .Select(r => Math.Abs(r.AppliedOffsetMs!.Value))
             .Order()
             .ToList();
 
@@ -250,11 +259,13 @@ public class AutoSubSyncController : ControllerBase
                 Kind = step.Kind.ToString(),
                 Succeeded = byKind[step.Kind].Count(x => x.Stage.Outcome == StageOutcome.Succeeded),
                 Skipped = byKind[step.Kind].Count(x => x.Stage.Outcome == StageOutcome.Skipped),
-                // Counted apart from Failed, the way the cards above the table already split them.
-                Rejected = byKind[step.Kind].Count(x =>
+                // ! Verify is the audio check, so only its row can refuse. A stage outlives its
+                //   run, and elsewhere this lands an old failure under a heading refusing nothing.
+                Rejected = step.Kind != SubtitleStageKind.Verify ? 0 : byKind[step.Kind].Count(x =>
                     x.Stage.Outcome == StageOutcome.Failed && SyncOutcome.IsAudioRefusal(x.Record)),
                 Failed = byKind[step.Kind].Count(x =>
-                    x.Stage.Outcome == StageOutcome.Failed && !SyncOutcome.IsAudioRefusal(x.Record)),
+                    x.Stage.Outcome == StageOutcome.Failed
+                    && (step.Kind != SubtitleStageKind.Verify || !SyncOutcome.IsAudioRefusal(x.Record))),
                 AverageMs = AverageMs(byKind[step.Kind].Select(x => x.Stage))
             })
             .ToList();
