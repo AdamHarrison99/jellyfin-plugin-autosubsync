@@ -89,6 +89,7 @@
 
             /* ! Grey alphas only; this page renders on light and dark themes. */
             #AutoSubSyncConfigPage .statusPanel {
+                container-type: inline-size;
                 margin-bottom: 1.75em;
                 padding: 1.1em 1.25em 1.25em 1.25em;
                 border: 1px solid rgba(128, 128, 128, 0.3);
@@ -138,8 +139,34 @@
                 margin-top: 0.9em;
             }
 
+            /* ! 11 tiles. Column counts of 10, 5 and 2 leave one tile alone on a row. */
+            @container (min-width: 0em) {
+                #AutoSubSyncConfigPage .statGrid {
+                    grid-template-columns: repeat(3, minmax(0, 1fr));
+                }
+            }
+
+            @container (min-width: 26em) {
+                #AutoSubSyncConfigPage .statGrid {
+                    grid-template-columns: repeat(4, minmax(0, 1fr));
+                }
+            }
+
+            @container (min-width: 40em) {
+                #AutoSubSyncConfigPage .statGrid {
+                    grid-template-columns: repeat(6, minmax(0, 1fr));
+                }
+            }
+
+            @container (min-width: 62em) {
+                #AutoSubSyncConfigPage .statGrid {
+                    grid-template-columns: repeat(11, minmax(0, 1fr));
+                }
+            }
+
             #AutoSubSyncConfigPage .stat {
-                padding: 0.6em 0.5em;
+                min-width: 0;
+                padding: 0.6em 0.4em;
                 border-radius: 4px;
                 background: rgba(128, 128, 128, 0.16);
                 text-align: center;
@@ -155,8 +182,10 @@
             #AutoSubSyncConfigPage .statLabel {
                 display: block;
                 font-size: 76%;
+                line-height: 1.25;
                 opacity: 0.72;
                 margin-top: 0.25em;
+                overflow-wrap: break-word;
             }
 
             #AutoSubSyncConfigPage .stat.isFailed .statValue {
