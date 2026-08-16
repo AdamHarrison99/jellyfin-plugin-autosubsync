@@ -82,6 +82,8 @@ public class SubtitleDiscoveryService
             DropCoveredEmbedded(candidates, item);
         }
 
+        DropOcrCoveredByText(candidates, item);
+
         AssignVariants(candidates);
 
         // Cheapest sources first, so text work completes before any OCR starts.
@@ -128,14 +130,85 @@ public class SubtitleDiscoveryService
     private static string LanguageKey(string? language)
         => LanguageCodes.Normalize(language) ?? string.Empty;
 
+    // ! Slot, ¬language. A signs track carries the language of the full one and has to survive.
+    private void DropOcrCoveredByText(List<Candidate> candidates, BaseItem item)
+    {
+        var all = candidates.Select(c => c.Target).ToList();
+
+        candidates.RemoveAll(c =>
+        {
+            if (!TextCovers(c.Target, all))
+            {
+                return false;
+            }
+
+            _logger.LogDebug(
+                "{Item}: skipping the OCR for the {Language} track, a text subtitle serves it",
+                item.Name,
+                c.Target.Language ?? "unlabelled");
+            return true;
+        });
+    }
+
+    // True when a readable track already serves this bitmap's slot.
+    internal static bool TextCovers(SubtitleTarget target, IReadOnlyList<SubtitleTarget> all)
+    {
+        var slot = SlotOf(target);
+
+        // An unlabelled track names no language, and two of them need not share one.
+        if (!target.RequiresOcr || slot.Language.Length == 0)
+        {
+            return false;
+        }
+
+        // ! A title is the only mark a signs track carries when nothing flagged it forced.
+        if (!string.IsNullOrWhiteSpace(target.Title) || SharesAnIndex(target, all))
+        {
+            return false;
+        }
+
+        foreach (var other in all)
+        {
+            if (!other.RequiresOcr && other.UnsupportedReason is null && SlotOf(other) == slot)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // ! One MediaStream covers a whole index, so its flags are the same for every stream in it.
+    //   Only the language is per-stream, and a forced twin is indistinguishable.
+    private static bool SharesAnIndex(SubtitleTarget target, IReadOnlyList<SubtitleTarget> all)
+    {
+        if (target.VobSubStream is null)
+        {
+            return false;
+        }
+
+        foreach (var other in all)
+        {
+            if (other.VobSubStream is not null
+                && other.VobSubStream != target.VobSubStream
+                && string.Equals(other.SubtitlePath, target.SubtitlePath, StringComparison.OrdinalIgnoreCase)
+                && SlotOf(other).Language == SlotOf(target).Language)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static SubtitleSlot SlotOf(SubtitleTarget target)
+        => new(LanguageKey(target.Language), target.IsForced, target.IsHearingImpaired);
+
     // ! Two tracks sharing a language build the same sidecar name; without a variant the
     //   second overwrites the first.
     private static void AssignVariants(List<Candidate> candidates)
     {
-        var groups = candidates.GroupBy(c => new SubtitleSlot(
-            LanguageKey(c.Target.Language),
-            c.Target.IsForced,
-            c.Target.IsHearingImpaired));
+        var groups = candidates.GroupBy(c => SlotOf(c.Target));
 
         foreach (var group in groups)
         {

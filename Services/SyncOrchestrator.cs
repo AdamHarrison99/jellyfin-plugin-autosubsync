@@ -292,9 +292,30 @@ public class SyncOrchestrator
                     record.Status = SyncStatus.Skipped;
                     record.AlignedAtMs = sits;
 
+                    // ! An OCR'd track has no text on disk yet. Dropping it here leaves the user
+                    //   nothing and points deduplication at a bitmap it cannot read.
+                    if (target.RequiresOcr)
+                    {
+                        var converted = config.RemoveHearingImpairedTags
+                            ? await TransformAsync(target, record, inputPath, scratch, cancellationToken)
+                                .ConfigureAwait(false)
+                            : inputPath;
+
+                        if (_placer.Place(target, record, converted, config) is not { } kept)
+                        {
+                            return Fail(
+                                record,
+                                "Failed: the converted subtitle could not be written into the library.");
+                        }
+
+                        record.OutputPath = kept.OutputPath;
+                        record.BackupPath = kept.BackupPath;
+                        record.Provenance = kept.Provenance;
+                    }
+
                     // ! The file stands as it is, so deduplication has to be told where it is.
                     //   Without a path the slot reads as unsynced and its duplicates survive.
-                    if (target.Origin == SubtitleOrigin.External)
+                    else if (target.Origin == SubtitleOrigin.External)
                     {
                         record.OutputPath ??= target.SubtitlePath;
                     }
@@ -628,7 +649,7 @@ public class SyncOrchestrator
 
         var output = Track(scratch, ScratchPath(".srt"))!;
         var result = await _seConv
-            .OcrAsync(source, output, target.Language, cancellationToken)
+            .OcrAsync(source, output, target.Language, target.Codec, cancellationToken)
             .ConfigureAwait(false);
 
         record.ElapsedMs = result.ElapsedMs;
@@ -636,6 +657,27 @@ public class SyncOrchestrator
         if (!result.Succeeded)
         {
             return FailStage(record, result.Message, SubtitleStageKind.Convert);
+        }
+
+        // ! Every later gate judges timing, and OCR timings come off the index. Nothing else
+        //   here would notice that the text is unreadable.
+        var reading = OcrReadability.Read(result.OutputPath!);
+
+        if (reading.IsNoise)
+        {
+            _logger.LogWarning(
+                "Rejected the OCR for {Item} ({Key}): {Words} words averaging {Mean:F2} characters "
+                + "with {Short:P0} of them under three, which is text the reader did not resolve",
+                target.ItemName,
+                target.Key,
+                reading.Words,
+                reading.MeanWordLength,
+                reading.ShortWordShare);
+
+            return FailStage(
+                record,
+                "Rejected: the OCR tool could not read this track well enough to use.",
+                SubtitleStageKind.Convert);
         }
 
         RecordStage(record, SubtitleStageKind.Convert, StageOutcome.Succeeded, null, result.ElapsedMs);
@@ -879,7 +921,7 @@ public class SyncOrchestrator
             var subtitleInfo = new FileInfo(subtitlePath);
             record.SourceLength = subtitleInfo.Length;
             record.SourceLastWriteUtc = subtitleInfo.LastWriteTimeUtc;
-            record.SourceSha256 = FileFingerprint.TryComputeFull(subtitlePath);
+            record.SourceSha256 = FileFingerprint.TryComputeSource(subtitlePath, target.VobSubStream);
         }
         catch (IOException ex)
         {
@@ -1011,9 +1053,11 @@ public class SyncOrchestrator
             return true;
         }
 
+        // ! Streams of one index share a payload. Without the stream, every one of them
+        //   fingerprints identically and SettledTwin adopts another language's result.
         return record.SourceSha256 is not null
                && subtitlePath is not null
-               && record.SourceSha256 == FileFingerprint.TryComputeFull(subtitlePath);
+               && record.SourceSha256 == FileFingerprint.TryComputeSource(subtitlePath, target.VobSubStream);
     }
 
     private static string Describe(long? ms) => ms is { } value ? $"{value}ms" : "an unmeasured amount";

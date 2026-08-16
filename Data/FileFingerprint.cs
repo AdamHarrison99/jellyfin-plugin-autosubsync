@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -7,6 +8,20 @@ namespace Jellyfin.Plugin.AutoSubSync.Data;
 public static class FileFingerprint
 {
     private const int ChunkSize = 64 * 1024;
+
+    // ! For a source several streams share. The suffix is what separates them, and a partial
+    //   read is what keeps one payload from being hashed in full once per stream.
+    public static string? TryComputeSource(string path, int? streamIndex)
+    {
+        if (streamIndex is not { } index)
+        {
+            return TryComputeFull(path);
+        }
+
+        return TryComputePartial(path) is { } hash
+            ? hash + "#" + index.ToString(CultureInfo.InvariantCulture)
+            : null;
+    }
 
     // For subtitle files.
     public static string? TryComputeFull(string path)

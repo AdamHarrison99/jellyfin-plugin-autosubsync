@@ -49,10 +49,17 @@ public class SeConvRunner : ISeConvRunner
             ? null
             : new ToolUnavailable(status.Message, status.Readiness == PayloadReadiness.Fetching);
 
+    private static readonly HashSet<string> VobSubExtensions =
+        new(StringComparer.OrdinalIgnoreCase) { ".idx", ".sub" };
+
+    private static readonly HashSet<string> VobSubCodecs =
+        new(StringComparer.OrdinalIgnoreCase) { "dvd_subtitle", "dvdsub" };
+
     public Task<SeConvResult> OcrAsync(
         string inputPath,
         string outputPath,
         string? language,
+        string? codec,
         CancellationToken cancellationToken)
     {
         var arguments = new List<string>
@@ -65,6 +72,13 @@ public class SeConvRunner : ISeConvRunner
             outputPath
         };
 
+        // ! Colour isolation is the converter's default and binarises VobSub to black-on-white
+        //   off the wrong colour on some sources, which reads back as noise.
+        if (IsVobSub(inputPath, codec))
+        {
+            arguments.Insert(3, "--no-vobsub-isolate-colors");
+        }
+
         // tessdata names match ISO 639-2/T, which is what the allowlist already normalizes to.
         if (LanguageCodes.Normalize(language) is { } code)
         {
@@ -73,6 +87,11 @@ public class SeConvRunner : ISeConvRunner
 
         return RunAsync(arguments, outputPath, _runtime.GetOcrStatus(), cancellationToken);
     }
+
+    // A sidecar is known by its extension, an extracted track only by the codec it came from.
+    private static bool IsVobSub(string inputPath, string? codec)
+        => VobSubExtensions.Contains(Path.GetExtension(inputPath))
+           || (codec is not null && VobSubCodecs.Contains(codec));
 
     public Task<SeConvResult> RemoveHearingImpairedAsync(
         string inputPath,

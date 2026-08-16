@@ -19,6 +19,7 @@ public interface ISeConvRunner
         string inputPath,
         string outputPath,
         string? language,
+        string? codec,
         CancellationToken cancellationToken);
 
     Task<SeConvResult> RemoveHearingImpairedAsync(
