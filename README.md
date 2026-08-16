@@ -73,8 +73,8 @@ Every setting is explained on the settings page. In short:
 
 A subtitle is synced once and then left alone — but changing a setting that would have produced a
 different result puts the affected subtitles back in the queue. **Retry failed subtitles** does the
-same for anything that failed and starts a full library sync, without waiting for a setting to
-change.
+same for anything that failed or was rejected by the audio check, and starts a full library sync,
+without waiting for a setting to change.
 
 Files the plugin writes alongside your originals carry an autosubsync marker in their name. Overwritten files keep their original name — the backup vault is what makes those reversible.
 

@@ -102,10 +102,7 @@ public class AutoSubSyncController : ControllerBase
             // Split the same way the cards are; one list over both would total neither.
             RefusalReasons = Reasons(records.Where(SyncOutcome.IsAudioRefusal)),
             FailureReasons = Reasons(records.Where(r =>
-                r.Status == SyncStatus.Failed && !SyncOutcome.IsAudioRefusal(r))),
-
-            // Over everything the panel draws from, so a removal counts as activity.
-            LastRecordUpdateUtc = stored.Count == 0 ? null : stored.Max(r => (DateTime?)r.UpdatedUtc)
+                r.Status == SyncStatus.Failed && !SyncOutcome.IsAudioRefusal(r)))
         });
     }
 
@@ -259,10 +256,8 @@ public class AutoSubSyncController : ControllerBase
                 Kind = step.Kind.ToString(),
                 Succeeded = byKind[step.Kind].Count(x => x.Stage.Outcome == StageOutcome.Succeeded),
                 Skipped = byKind[step.Kind].Count(x => x.Stage.Outcome == StageOutcome.Skipped),
-                // ! Verify is the audio check, so only its row can refuse. A stage outlives its
-                //   run, and elsewhere this lands an old failure under a heading refusing nothing.
-                Rejected = step.Kind != SubtitleStageKind.Verify ? 0 : byKind[step.Kind].Count(x =>
-                    x.Stage.Outcome == StageOutcome.Failed && SyncOutcome.IsAudioRefusal(x.Record)),
+                // ! A refusal is not a failure. Only Verify can hold one, and it is reported on
+                //   its own card and reason block, never here.
                 Failed = byKind[step.Kind].Count(x =>
                     x.Stage.Outcome == StageOutcome.Failed
                     && (step.Kind != SubtitleStageKind.Verify || !SyncOutcome.IsAudioRefusal(x.Record))),
