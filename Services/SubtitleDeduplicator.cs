@@ -104,6 +104,8 @@ public class SubtitleDeduplicator
 
         public required string Path { get; init; }
 
+        public required DateTime CreatedUtc { get; init; }
+
         public required long Length { get; init; }
 
         public required bool IsPluginFile { get; init; }
@@ -187,16 +189,19 @@ public class SubtitleDeduplicator
         {
             Record = record,
             Path = path,
+            CreatedUtc = info.CreationTimeUtc,
             Length = info.Length,
             IsPluginFile = record.Provenance == SubtitleProvenance.Created,
             Profile = profile
         };
     }
 
-    // A file the user chose to have outlives one the plugin produced. An unnumbered name wins ties.
+    // A file the user chose to have outlives one the plugin produced, then the one that was there
+    // first. An unnumbered name wins ties.
     private static Candidate ChooseKeeper(List<Candidate> group)
         => group
             .OrderBy(c => c.IsPluginFile)
+            .ThenBy(c => c.CreatedUtc)
             .ThenByDescending(c => c.Length)
             .ThenBy(c => CanonicalPath(c.Path) is not null)
             .ThenBy(c => c.Path, StringComparer.Ordinal)
