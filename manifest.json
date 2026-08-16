@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.2.6.0",
+        "changelog": "A sync the audio check cannot confirm is no longer written to your library. 1.2.5.0 could stretch a correctly timed subtitle when the audio check reached no verdict and the sync engine reported a small framerate correction; if any of your subtitles are wrong, Roll back everything restores your originals. A new setting, Only sync when audio check is conclusive, is on by default and refuses anything the audio cannot vouch for. The sync engine must now score an alignment of 40 a second, up from 20, and a stretch the audio check never measured is refused. Adds a Retry failed subtitles button under Actions, and stopping the scheduled task now stops syncs started by any other route.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-autosubsync/releases/download/v1.2.6.0/autosubsync-v1.2.6.0.zip",
+        "checksum": "abbe2b07807e7b2616245b315755208c",
+        "timestamp": "2026-08-16T02:23:30Z"
+      },
+      {
         "version": "1.2.5.0",
         "changelog": "The audio check no longer refuses subtitles it could not actually measure. A sync the engine finished is now kept even when the engine crashes reporting the result, and a subtitle the audio check cannot measure is refused only if the sync engine found no alignment either. Audio check refusals are grouped into readable rows in the log.",
         "targetAbi": "10.11.0.0",

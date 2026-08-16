@@ -1,6 +1,6 @@
 name: "AutoSubSync"
 guid: "6dbc32c5-1c68-481e-b066-9521552a2615"
-version: "1.2.5.0"
+version: "1.2.6.0"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 overview: "Automatically synchronizes external and embedded subtitles across your library."
@@ -17,7 +17,10 @@ owner: "AdamHarrison99"
 artifacts:
   - "Jellyfin.Plugin.AutoSubSync.dll"
 changelog: |
-  - The audio check no longer refuses subtitles it could not actually measure
-  - A sync the engine finished is now kept even when the engine crashes reporting the result
-  - A subtitle the audio check cannot measure is refused only if the engine found no alignment either
-  - Audio check refusals are grouped into readable rows in the log
+  - A sync the audio check cannot confirm is no longer written to your library
+  - New setting: Only sync when audio check is conclusive, on by default
+  - A sync that stretches a subtitle across the runtime is refused unless the audio check measured that stretch
+  - The sync engine must now score an alignment of 40 a second, up from 20
+  - New Retry failed subtitles button under Actions
+  - Stopping the scheduled task now stops syncs started by any other route
+  - Sync outcome messages now name the action and the reason
