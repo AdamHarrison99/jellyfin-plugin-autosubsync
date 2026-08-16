@@ -67,23 +67,25 @@ public class SeConvRunner : ISeConvRunner
             inputPath,
             OutputFormat,
             "--ocr-engine:tesseract",
-            "--fix-common-errors",
-            "--outputfilename",
-            outputPath
+            "--fix-common-errors"
         };
 
         // ! Colour isolation is the converter's default and binarises VobSub to black-on-white
         //   off the wrong colour on some sources, which reads back as noise.
         if (IsVobSub(inputPath, codec))
         {
-            arguments.Insert(3, "--no-vobsub-isolate-colors");
+            arguments.Add("--no-vobsub-isolate-colors");
         }
 
-        // tessdata names match ISO 639-2/T, which is what the allowlist already normalizes to.
-        if (LanguageCodes.Normalize(language) is { } code)
+        // ! Handed verbatim to Tesseract's -l, so it must be a tessdata name, ¬an ISO code.
+        if (TesseractLanguage.Resolve(language) is { } code)
         {
-            arguments.Insert(3, "--ocr-language:" + code);
+            arguments.Add("--ocr-language:" + code);
         }
+
+        // ! Last, and as a pair. A flag added between the two makes the path the flag's value.
+        arguments.Add("--outputfilename");
+        arguments.Add(outputPath);
 
         return RunAsync(arguments, outputPath, _runtime.GetOcrStatus(), cancellationToken);
     }

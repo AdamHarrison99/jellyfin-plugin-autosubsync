@@ -57,6 +57,9 @@ public class SyncRecord
     // ! Set only when the audio check refused a result. Widening the tolerance retries the record.
     public long? RejectedOffsetMs { get; set; }
 
+    // ! Null on a record written before the field existed; the panel infers those from the stages.
+    public bool? RefusedByAudio { get; set; }
+
     // ! Set only when the audio check left a subtitle alone. Tightening the tolerance retries it.
     public long? AlignedAtMs { get; set; }
 

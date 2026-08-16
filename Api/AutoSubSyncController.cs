@@ -72,11 +72,15 @@ public class AutoSubSyncController : ControllerBase
             Synced = records.Count(r => r.Status == SyncStatus.Synced),
             MedianAppliedOffsetMs = MedianAppliedOffset(records),
             // A result the audio refused is not a tool failure, and the two are not fixed alike.
-            Failed = records.Count(r => r.Status == SyncStatus.Failed && r.RejectedOffsetMs is null),
-            Rejected = records.Count(r => r.Status == SyncStatus.Failed && r.RejectedOffsetMs is not null),
-            Skipped = records.Count(r => r.Status == SyncStatus.Skipped),
+            Failed = records.Count(r => r.Status == SyncStatus.Failed && !SyncOutcome.IsAudioRefusal(r)),
+            Rejected = records.Count(SyncOutcome.IsAudioRefusal),
+            Skipped = records.Count(SyncOutcome.NothingToDo),
+            SourceMissing = records.Count(r =>
+                r.Status == SyncStatus.Skipped && !SyncOutcome.NothingToDo(r)),
             DryRun = records.Count(r => r.Status == SyncStatus.DryRun),
             Unsupported = records.Count(r => r.Status == SyncStatus.Unsupported),
+            // ! Counted so the cards add up to Total. A payload fetch and a retry both park here.
+            Waiting = records.Count(r => r.Status == SyncStatus.Pending),
 
             Stages = SummarizeStages(records, config),
 
@@ -87,17 +91,23 @@ public class AutoSubSyncController : ControllerBase
                 .Select(g => new { Reason = g.Key, Count = g.Count() })
                 .ToList(),
 
-            FailureReasons = records
-                .Where(r => r.Status == SyncStatus.Failed && r.Message is not null)
-                .GroupBy(r => Summarize(r.Message!))
-                .OrderByDescending(g => g.Count())
-                .Select(g => new { Reason = g.Key, Count = g.Count() })
-                .Take(8)
-                .ToList(),
+            // Split the same way the cards are; one list over both would total neither.
+            RefusalReasons = Reasons(records.Where(SyncOutcome.IsAudioRefusal)),
+            FailureReasons = Reasons(records.Where(r =>
+                r.Status == SyncStatus.Failed && !SyncOutcome.IsAudioRefusal(r))),
 
             LastRecordUpdateUtc = records.Count == 0 ? null : records.Max(r => (DateTime?)r.UpdatedUtc)
         });
     }
+
+    private static object Reasons(IEnumerable<SyncRecord> records)
+        => records
+            .Where(r => r.Message is not null)
+            .GroupBy(r => Summarize(r.Message!))
+            .OrderByDescending(g => g.Count())
+            .Select(g => new { Reason = g.Key, Count = g.Count() })
+            .Take(8)
+            .ToList();
 
     // ! A trailing parenthetical is per-subtitle detail, and grouping wants the sentence alone.
     private static string WithoutDetail(string line)

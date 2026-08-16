@@ -146,6 +146,7 @@ public class SyncOrchestrator
             record.Status = SyncStatus.Failed;
             record.RejectedOffsetMs = null;
             record.AppliedOffsetMs = null;
+            record.RefusedByAudio = false;
             record.Message = ex.Message;
             SafeUpsert(record);
             return record;
@@ -225,6 +226,10 @@ public class SyncOrchestrator
                 record.Status = SyncStatus.Skipped;
                 record.AppliedOffsetMs = null;
                 record.SkippedMovementMs = null;
+
+                // ! The measurement described a file that is gone. Leaving it retries the record
+                //   forever through ToleranceWouldNowSync and counts it as already in sync.
+                record.AlignedAtMs = null;
                 record.Message = "Skipped: the subtitle file is no longer on disk.";
                 _logger.LogDebug("{Item} ({Key}) is gone from disk", target.ItemName, target.Key);
                 SafeUpsert(record);
@@ -985,6 +990,8 @@ public class SyncOrchestrator
         record.Message = twin.Message;
         record.AppliedOffsetMs = twin.AppliedOffsetMs;
         record.RejectedOffsetMs = twin.RejectedOffsetMs;
+        // ! Carry it w/ the status. A failure adopted without it reads as a tool failure.
+        record.RefusedByAudio = twin.RefusedByAudio;
         record.SkippedMovementMs = twin.SkippedMovementMs;
         record.ToolUsed = twin.ToolUsed;
         record.ReferenceUsed = target.VideoPath;
@@ -1095,6 +1102,10 @@ public class SyncOrchestrator
         record.RejectedOffsetMs = rejectedOffsetMs;
         record.AppliedOffsetMs = null;
         record.SkippedMovementMs = null;
+
+        // ! The Verify stage is the audio check, so the kind names the refusal exactly. Written
+        //   on every failure, ¬only the refusals, so it can never describe an earlier run.
+        record.RefusedByAudio = kind == SubtitleStageKind.Verify;
         record.Message = string.IsNullOrWhiteSpace(message)
             ? "Failed: the sync did not complete."
             : message;
@@ -1137,6 +1148,7 @@ public class SyncOrchestrator
         record.RejectedOffsetMs = null;
         record.AppliedOffsetMs = null;
         record.SkippedMovementMs = null;
+        record.RefusedByAudio = kind == SubtitleStageKind.Verify;
         record.Message = string.IsNullOrWhiteSpace(message)
             ? "Failed: the OCR step did not complete."
             : message;

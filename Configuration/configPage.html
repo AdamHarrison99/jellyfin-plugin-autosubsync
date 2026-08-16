@@ -573,7 +573,9 @@
                         + statCard(status.Skipped, 'already in sync')
                         + statCard(status.Rejected, 'refused by audio check', status.Rejected ? 'isFailed' : '')
                         + statCard(status.Failed, 'failed', status.Failed ? 'isFailed' : '')
+                        + statCard(status.SourceMissing, 'source gone')
                         + statCard(status.Unsupported, 'unsupported')
+                        + statCard(status.Waiting, 'not yet run')
                         + statCard(status.DryRun, 'pending dry run')
                         + statCard(status.InFlight, 'running now', status.InFlight ? 'isActive' : '');
                 }
@@ -631,6 +633,7 @@
 
                         page.querySelector('#statusUnsupported').innerHTML =
                             reasonBlock('Unsupported tracks', status.UnsupportedReasons)
+                            + reasonBlock('Refused by the audio check', status.RefusalReasons)
                             + reasonBlock('Failure reasons', status.FailureReasons);
 
                         page.querySelector('#statusPanel').style.display = '';

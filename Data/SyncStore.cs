@@ -177,21 +177,7 @@ public class SyncStore : ISyncStore, IDisposable
     {
         lock (_lock)
         {
-            var reopened = 0;
-
-            foreach (var record in _records)
-            {
-                if (record.Status != SyncStatus.Failed)
-                {
-                    continue;
-                }
-
-                record.Status = SyncStatus.Pending;
-                record.RejectedOffsetMs = null;
-                record.Message = null;
-                record.Stages?.Clear();
-                reopened++;
-            }
+            var reopened = ReopenFailedIn(_records);
 
             if (reopened > 0)
             {
@@ -200,6 +186,31 @@ public class SyncStore : ISyncStore, IDisposable
 
             return reopened;
         }
+    }
+
+    internal static int ReopenFailedIn(List<SyncRecord> records)
+    {
+        var reopened = 0;
+
+        foreach (var record in records)
+        {
+            if (record.Status != SyncStatus.Failed)
+            {
+                continue;
+            }
+
+            record.Status = SyncStatus.Pending;
+            record.RejectedOffsetMs = null;
+            record.Message = null;
+
+            // ! Clear it w/ the rest. A retained flag describes a run whose stages and offset
+            //   were just erased.
+            record.RefusedByAudio = null;
+            record.Stages?.Clear();
+            reopened++;
+        }
+
+        return reopened;
     }
 
     public int Clear()
@@ -368,6 +379,10 @@ public class SyncStore : ISyncStore, IDisposable
             record.Status = SyncStatus.Pending;
             record.RejectedOffsetMs = null;
             record.Message = null;
+            // ! Everything describing the old run goes, as in ReopenFailed. The record is Pending
+            //   → it runs again and re-stamps.
+            record.RefusedByAudio = null;
+            record.Stages?.Clear();
             reopened++;
         }
 
