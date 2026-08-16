@@ -76,18 +76,12 @@ different result puts the affected subtitles back in the queue. **Retry failed s
 same for anything that failed and starts a full library sync, without waiting for a setting to
 change.
 
-Files the plugin writes carry an `autosubsync` marker in their name. That is how it recognizes its
-own output, and how rollback knows what it may delete.
+Files the plugin writes alongside your originals carry an autosubsync marker in their name. Overwritten files keep their original name — the backup vault is what makes those reversible.
 
 ## The audio check
 
 Every subtitle is scored against the video's own audio, before and after syncing. It costs a few
 seconds against a sync that takes minutes.
-
-- **Already on the speech** — the engine is not run and the file is left as it is.
-- **Synced badly** — the result is discarded, your original stands, and the item is listed under
-  **refused by audio check** rather than as a failure.
-- **Right at the start, minutes out at the end** — that framerate mismatch is caught too.
 
 Some titles cannot be measured; a film under a continuous score may never give a clear answer. Those
 are left alone by default — all that remains to judge them is the sync engine's own opinion of its

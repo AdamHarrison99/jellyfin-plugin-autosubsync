@@ -91,7 +91,7 @@ public class AutoSubSyncController : ControllerBase
 
             UnsupportedReasons = records
                 .Where(r => r.Status == SyncStatus.Unsupported && r.Message is not null)
-                .GroupBy(r => r.Message!)
+                .GroupBy(r => WithoutStatusPrefix(r.Message!))
                 .OrderByDescending(g => g.Count())
                 .Select(g => new { Reason = g.Key, Count = g.Count() })
                 .ToList(),
@@ -114,6 +114,27 @@ public class AutoSubSyncController : ControllerBase
             .Take(8)
             .ToList();
 
+    private static readonly string[] StatusPrefixes =
+        { "Rejected:", "Failed:", "Skipped:", "Unsupported:" };
+
+    // ! The heading over the list already names the outcome. Kept on the stored message, which
+    //   the log lines and LogOutcome still read.
+    private static string WithoutStatusPrefix(string line)
+    {
+        foreach (var prefix in StatusPrefixes)
+        {
+            if (!line.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var rest = line[prefix.Length..].TrimStart();
+            return rest.Length == 0 ? line : char.ToUpperInvariant(rest[0]) + rest[1..];
+        }
+
+        return line;
+    }
+
     // ! A trailing parenthetical is per-subtitle detail, and grouping wants the sentence alone.
     private static string WithoutDetail(string line)
     {
@@ -126,10 +147,10 @@ public class AutoSubSyncController : ControllerBase
     // ! An engine failure arrives as a whole stderr dump. The varying parts are file positions.
     private static string Summarize(string message)
     {
-        var line = WithoutDetail(message
+        var line = WithoutStatusPrefix(WithoutDetail(message
             .Split('\n')
             .Select(part => part.Trim())
-            .LastOrDefault(part => part.Length > 0) ?? message);
+            .LastOrDefault(part => part.Length > 0) ?? message));
 
         if (line.Length > 120)
         {
@@ -208,7 +229,10 @@ public class AutoSubSyncController : ControllerBase
     // ! Only steps the settings actually turn on. Acquire is unbuilt, so it is not here.
     private static List<object> SummarizeStages(List<SyncRecord> records, PluginConfiguration config)
     {
-        var byKind = records.SelectMany(r => r.Stages).ToLookup(s => s.Kind);
+        // ! Paired back to its record. A stage outcome alone cannot tell a refusal from a failure.
+        var byKind = records
+            .SelectMany(r => r.Stages.Select(s => (Record: r, Stage: s)))
+            .ToLookup(x => x.Stage.Kind);
 
         var pipeline = new[]
         {
@@ -224,10 +248,14 @@ public class AutoSubSyncController : ControllerBase
             .Select(step => (object)new
             {
                 Kind = step.Kind.ToString(),
-                Succeeded = byKind[step.Kind].Count(s => s.Outcome == StageOutcome.Succeeded),
-                Skipped = byKind[step.Kind].Count(s => s.Outcome == StageOutcome.Skipped),
-                Failed = byKind[step.Kind].Count(s => s.Outcome == StageOutcome.Failed),
-                AverageMs = AverageMs(byKind[step.Kind])
+                Succeeded = byKind[step.Kind].Count(x => x.Stage.Outcome == StageOutcome.Succeeded),
+                Skipped = byKind[step.Kind].Count(x => x.Stage.Outcome == StageOutcome.Skipped),
+                // Counted apart from Failed, the way the cards above the table already split them.
+                Rejected = byKind[step.Kind].Count(x =>
+                    x.Stage.Outcome == StageOutcome.Failed && SyncOutcome.IsAudioRefusal(x.Record)),
+                Failed = byKind[step.Kind].Count(x =>
+                    x.Stage.Outcome == StageOutcome.Failed && !SyncOutcome.IsAudioRefusal(x.Record)),
+                AverageMs = AverageMs(byKind[step.Kind].Select(x => x.Stage))
             })
             .ToList();
     }

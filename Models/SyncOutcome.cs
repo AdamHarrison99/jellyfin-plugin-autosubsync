@@ -5,6 +5,10 @@ namespace Jellyfin.Plugin.AutoSubSync.Models;
 // Reads a stored outcome the way the status panel groups it.
 public static class SyncOutcome
 {
+    // ! The one refusal RequireAudioConfirmation raises. Every other refusal stands without it.
+    public const string NoVerdictRefusal =
+        "Rejected: the audio check reached no verdict on this title — rejected as inconclusive.";
+
     // ! ¬RejectedOffsetMs: a refusal that reached no verdict carries no offset.
     public static bool IsAudioRefusal(SyncRecord record)
         => record.Status == SyncStatus.Failed && (record.RefusedByAudio ?? InferredRefusal(record));

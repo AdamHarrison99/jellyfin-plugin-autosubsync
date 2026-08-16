@@ -354,7 +354,7 @@ public class SyncOrchestrator
                 TryDelete(attempt.ProducedPath);
                 return Fail(
                     record,
-                    "Rejected: the sync engine rescaled the subtitle by a factor that matches "
+                    "Failed: the sync engine rescaled the subtitle by a factor that matches "
                     + "no known framerate conversion.");
             }
 
@@ -438,8 +438,8 @@ public class SyncOrchestrator
 
                 return Fail(
                     record,
-                    "Rejected: the sync engine stretched the subtitle across the runtime - the "
-                    + "audio check did not measure that stretch.",
+                    "Rejected: the sync engine rescaled the subtitle across the runtime — the "
+                    + "audio check did not measure that change.",
                     Math.Abs(stretch),
                     SubtitleStageKind.Verify);
             }
@@ -500,7 +500,7 @@ public class SyncOrchestrator
 
                     return Fail(
                         record,
-                        "Rejected: the audio check reached no verdict on this title.",
+                        SyncOutcome.NoVerdictRefusal,
                         null,
                         SubtitleStageKind.Verify);
                 }
@@ -686,7 +686,7 @@ public class SyncOrchestrator
 
             return FailStage(
                 record,
-                "Rejected: the OCR tool could not read this track well enough to use.",
+                "Failed: the OCR tool could not read this track well enough to use.",
                 SubtitleStageKind.Convert);
         }
 
@@ -852,10 +852,16 @@ public class SyncOrchestrator
         }
         else
         {
-            _logger.LogDebug("The sync engine failed for {Item}: {Message}", target.ItemName, reason);
+            _logger.LogWarning("The sync engine failed for {Item}: {Message}", target.ItemName, reason);
         }
 
-        return new EngineAttempt(null, reason);
+        // ! The engine's own output is logged above and kept out of the record. It is a stderr
+        //   dump, and the panel groups records by message.
+        return new EngineAttempt(
+            null,
+            invocation.TimedOut
+                ? "Failed: the sync engine timed out."
+                : "Failed: the sync engine did not complete.");
     }
 
     // The engine's own score for what it produced, per second of subtitle on screen.

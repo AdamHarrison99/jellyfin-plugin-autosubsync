@@ -164,7 +164,10 @@ public class SeConvRunner : ISeConvRunner
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to start {File}", exe);
-            return new SeConvResult(null, ex.Message, stopwatch.ElapsedMilliseconds);
+            return new SeConvResult(
+                null,
+                "Failed: the OCR tool could not be started.",
+                stopwatch.ElapsedMilliseconds);
         }
 
         process.BeginOutputReadLine();
@@ -204,12 +207,18 @@ public class SeConvRunner : ISeConvRunner
         if (!File.Exists(outputPath) || !SubtitleContent.HasCues(outputPath))
         {
             TryDelete(outputPath);
+
+            // ! Logged, never stored. The panel groups records by message, and a stderr dump
+            //   groups as one row per title.
             var message = Tail(stderr.ToString());
+            if (!string.IsNullOrWhiteSpace(message))
+            {
+                _logger.LogWarning("The OCR tool wrote no cues: {Message}", message);
+            }
+
             return new SeConvResult(
                 null,
-                string.IsNullOrWhiteSpace(message)
-                    ? "Failed: the OCR tool produced no subtitle cues."
-                    : message,
+                "Failed: the OCR tool produced no subtitle cues.",
                 stopwatch.ElapsedMilliseconds);
         }
 
