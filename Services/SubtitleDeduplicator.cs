@@ -137,6 +137,13 @@ public class SubtitleDeduplicator
                 target.IsHearingImpaired);
 
             var record = _store.GetByTargetKey(itemId, target.Key);
+
+            // ! This file was removed here. An absence the plugin caused cannot poison the slot.
+            if (record is { Retired: true })
+            {
+                continue;
+            }
+
             var candidate = ToCandidate(record);
 
             if (candidate is null)

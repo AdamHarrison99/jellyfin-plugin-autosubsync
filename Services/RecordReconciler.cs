@@ -38,11 +38,10 @@ public class RecordReconciler
             var offered = keys.Contains(record.TargetKey)
                 || (record.OutputPath is not null && paths.Contains(record.OutputPath));
 
-            // ! The plugin closed this row itself, so restamping it Stale would hide the work it
-            //   records. A file put back by hand is live again and rejoins the cards.
+            // ! Never restamped Stale. Reopened by the removed file itself, ¬by its target key.
             if (record.Retired)
             {
-                if (!offered)
+                if (record.OutputPath is null || !paths.Contains(record.OutputPath))
                 {
                     continue;
                 }

@@ -184,6 +184,9 @@ public class SyncOrchestrator
             return;
         }
 
+        // ! A settled outcome is live work. Deduplication retires the row again behind this.
+        record.Retired = false;
+
         var stage = record.RecordStage(kind, SyncOutcome.StageFor(record.Status), record.ToolUsed);
         stage.Message = record.Message;
         stage.ElapsedMs = record.ElapsedMs;
