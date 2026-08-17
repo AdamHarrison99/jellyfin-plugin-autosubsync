@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.4.3.0",
+        "changelog": "A subtitle the plugin removed as a duplicate of an embedded track no longer returns to the synced count on the next scan, and deduplication no longer stops running for that language once it has removed one. When two copies are otherwise equal, deduplication now keeps the one that was in your library first. A track that a setting deliberately left alone is reported as set aside rather than listed as unsupported. The pipeline table drops its Rejected column, and a subtitle the audio check rejected is no longer counted as a synchronization failure there — the rejected by audio check card and its reason list already report it. Retry failed subtitles now says that it retries what the audio check rejected as well.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-autosubsync/releases/download/v1.4.3.0/autosubsync-v1.4.3.0.zip",
+        "checksum": "250b17afbe0951887a54a89581c88b83",
+        "timestamp": "2026-08-17T00:44:35Z"
+      },
+      {
         "version": "1.4.2.0",
         "changelog": "Duplicates the plugin removed are now counted in the pipeline table instead of disappearing from it, and removals from earlier runs are restored to it. Image tracks skipped because a text subtitle of the same language already covers them are listed as unsupported rather than going unreported. The audio check column no longer appears on pipeline steps the audio check does not run, and subtitles awaiting a dry run are no longer counted as already in sync. The median shift is reported as a distance and negative shifts display correctly, reason lists are no longer cut off after eight entries, and the panel shows when its counts were last updated.",
         "targetAbi": "10.11.0.0",
