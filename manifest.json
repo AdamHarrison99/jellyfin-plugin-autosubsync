@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.5.0.0",
+        "changelog": "When the audio check cannot decide on a subtitle, a second pass now reads the same audio with voice detection and scores the subtitle against detected speech, which settles some of the titles the first pass could never measure. The check is also stricter about what counts as in sync: it judges alignment against the small lead subtitles are authored with rather than against zero, so results that are close but wrong are refused instead of written. Verdicts recorded by earlier versions were measured by the older rule and are re-judged as each subtitle is processed again, so run a full library sync after updating. A sync refused for rescaling the subtitle now says whether the title was simply too short for the check to measure drift. The sync engine has been rebuilt and downloads once more after this update.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-autosubsync/releases/download/v1.5.0.0/autosubsync-v1.5.0.0.zip",
+        "checksum": "cb2f564b60bf4bd123f1a41ffb4a4827",
+        "timestamp": "2026-08-18T23:15:20Z"
+      },
+      {
         "version": "1.4.3.0",
         "changelog": "A subtitle the plugin removed as a duplicate of an embedded track no longer returns to the synced count on the next scan, and deduplication no longer stops running for that language once it has removed one. When two copies are otherwise equal, deduplication now keeps the one that was in your library first. A track that a setting deliberately left alone is reported as set aside rather than listed as unsupported. The pipeline table drops its Rejected column, and a subtitle the audio check rejected is no longer counted as a synchronization failure there — the rejected by audio check card and its reason list already report it. Retry failed subtitles now says that it retries what the audio check rejected as well.",
         "targetAbi": "10.11.0.0",

@@ -1,6 +1,6 @@
 name: "AutoSubSync"
 guid: "6dbc32c5-1c68-481e-b066-9521552a2615"
-version: "1.4.3.0"
+version: "1.5.0.0"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 overview: "Automatically synchronizes external and embedded subtitles across your library."
@@ -17,9 +17,8 @@ owner: "AdamHarrison99"
 artifacts:
   - "Jellyfin.Plugin.AutoSubSync.dll"
 changelog: |
-  - A subtitle removed as a duplicate of an embedded track no longer comes back as synced
-  - Deduplication no longer stops running for a language after it removes a duplicate
-  - Deduplication keeps the file that was in the library first when copies are otherwise equal
-  - A track a setting deliberately left alone is no longer listed as unsupported
-  - The pipeline table drops its Rejected column, and rejections are not counted as failures
-  - Retry failed subtitles says that it also retries what the audio check rejected
+  - When the audio check cannot decide, voice detection now reads the same audio and settles some
+  - The audio check is stricter about what counts as in sync, so fewer bad results are written
+  - Verdicts recorded by earlier versions are re-judged; run a full library sync after updating
+  - A refused rescale now says whether the title was simply too short to measure drift
+  - The sync engine is rebuilt, so it downloads once more after this update
