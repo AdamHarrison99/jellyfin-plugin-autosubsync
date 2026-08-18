@@ -57,7 +57,7 @@ public class SyncRecord
     public bool Retired { get; set; }
 
     // ! Bump when the offset measurement changes. A record below it has its rejection re-opened.
-    public const int CurrentMeasurementVersion = 1;
+    public const int CurrentMeasurementVersion = 2;
 
     public int MeasurementVersion { get; set; }
 

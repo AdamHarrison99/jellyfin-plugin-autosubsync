@@ -56,7 +56,7 @@ Every setting is explained on the settings page. In short:
 | Setting | Default | |
 | --- | --- | --- |
 | Dry run mode | On | Finds and records everything, changes nothing. |
-| Only sync when the audio check is conclusive | On | Leaves the subtitle alone when the audio cannot confirm the result. |
+| Only sync when the audio checks and voice detection are conclusive | On | Leaves the subtitle alone when neither pass can confirm the result. |
 | Libraries | *none* | Nothing runs until you pick some. |
 | Process external subtitle files | On | Sidecar files next to your media. |
 | Process embedded subtitle tracks | Off | Extracted to a new file; the video is never modified, so Jellyfin then lists both. |
@@ -89,8 +89,8 @@ cannot measure, and it refuses as readily as it accepts.
 
 Some titles cannot be measured by either pass; a film under a continuous score may never give a
 clear answer. Those are left alone by default — all that remains to judge them is the sync engine's
-own opinion of its work, and that is sometimes confidently wrong. Untick **Only sync when the audio
-check is conclusive** to let it decide instead.
+own opinion of its work, and that is sometimes confidently wrong. Untick **Only sync when the audio checks
+and voice detection are conclusive** to let it decide instead.
 
 ### After updating the plugin
 
