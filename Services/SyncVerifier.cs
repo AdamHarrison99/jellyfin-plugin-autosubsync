@@ -54,9 +54,14 @@ public partial class SyncVerifier
 
     private const int StderrKeepChars = 512 * 1024;
 
-    // How far off the speech a subtitle may sit and still count as correct. Subtitles are shown
-    // slightly ahead of the line, so the honest baseline is a small positive lead, not zero.
-    public const int AlignedWithinMs = 500;
+    // The lead subtitles are authored with, measured across titles the check calls aligned.
+    public const int TypicalLeadMs = 170;
+
+    // How far a fitted shift may sit from that lead and still count as correct.
+    public const int AlignedWithinMs = 200;
+
+    // ! Drift is the difference between two fitted shifts, and the lead cancels in it.
+    public const int DriftWithinMs = 500;
 
     private const int SweepMs = 4_000;
     private const int StepMs = 25;
@@ -83,11 +88,16 @@ public partial class SyncVerifier
 
     private readonly IMediaEncoder _mediaEncoder;
     private readonly ILogger<SyncVerifier> _logger;
+    private readonly ISpeechOnsetSource? _speech;
 
-    public SyncVerifier(IMediaEncoder mediaEncoder, ILogger<SyncVerifier> logger)
+    public SyncVerifier(
+        IMediaEncoder mediaEncoder,
+        ILogger<SyncVerifier> logger,
+        ISpeechOnsetSource? speech = null)
     {
         _mediaEncoder = mediaEncoder;
         _logger = logger;
+        _speech = speech;
     }
 
     public Task<VerificationResult> VerifyAsync(
@@ -110,7 +120,59 @@ public partial class SyncVerifier
         var sample = await SampleAsync(ffmpegPath, videoPath, starts, cancellationToken)
             .ConfigureAwait(false);
 
-        return sample is null ? Nothing(0) : Score(sample, starts);
+        return sample is null
+            ? Nothing(0)
+            : await ScoreAsync(videoPath, sample, starts, cancellationToken).ConfigureAwait(false);
+    }
+
+    // ! The second pass runs only where the first reached no verdict. A Misaligned reading of the
+    //   silence ends it, and voice detection is never asked.
+    public async Task<VerificationResult> ScoreAsync(
+        string videoPath,
+        AudioSample sample,
+        List<long> starts,
+        CancellationToken cancellationToken)
+    {
+        var first = Score(sample, starts);
+
+        if (first.Verdict != SyncVerdict.Inconclusive || _speech is null)
+        {
+            return first;
+        }
+
+        var detected = await _speech.ReadAsync(videoPath, sample.Plan, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (detected is not { } speech)
+        {
+            return first;
+        }
+
+        var second = Score(new AudioSample(speech.Onsets, sample.Plan, speech.Windows), starts);
+
+        if (second.Verdict == SyncVerdict.Inconclusive)
+        {
+            _logger.LogDebug(
+                "Voice detection reached no verdict on {Video} either ({Onsets} onsets, {Hits} hits "
+                + "against a floor of {Floor})",
+                videoPath,
+                second.Onsets,
+                second.Hits,
+                second.Floor);
+            return first;
+        }
+
+        _logger.LogInformation(
+            "Voice detection settled {Video} as {Verdict}, {Shift} ms off the speech "
+            + "({Onsets} onsets, {Windows} windows, peak {Strength:F2}x)",
+            videoPath,
+            second.Verdict,
+            second.BestShiftMs,
+            second.Onsets,
+            second.Windows,
+            second.Strength);
+
+        return second;
     }
 
     // The cue start times, in order. Null when there are too few to say anything.
@@ -180,6 +242,10 @@ public partial class SyncVerifier
             : new AudioSample(onsets, windows, used);
     }
 
+    // Whether a fitted shift counts as in sync, read against the authored lead.
+    public static bool IsAligned(long shiftMs)
+        => Math.Abs(shiftMs - TypicalLeadMs) <= AlignedWithinMs;
+
     // How far the cues sit from the speech, and whether that answer holds across the film.
     public static VerificationResult Score(AudioSample sample, List<long> starts)
     {
@@ -197,7 +263,7 @@ public partial class SyncVerifier
 
         // ! A rate error can beat the sweep outright: no one shift fits the film, while each
         //   half of it still fits its own. That disagreement is the answer.
-        if (drift is { } spread && Math.Abs(spread) > AlignedWithinMs)
+        if (drift is { } spread && Math.Abs(spread) > DriftWithinMs)
         {
             return new VerificationResult(
                 SyncVerdict.Misaligned,
@@ -216,7 +282,7 @@ public partial class SyncVerifier
         }
 
         return new VerificationResult(
-            Math.Abs(best) > AlignedWithinMs ? SyncVerdict.Misaligned : SyncVerdict.Aligned,
+            IsAligned(best) ? SyncVerdict.Aligned : SyncVerdict.Misaligned,
             best,
             drift,
             sample.Windows,

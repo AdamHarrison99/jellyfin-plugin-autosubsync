@@ -62,6 +62,25 @@ public class AssyCliRunner : IAssyCliRunner
         return RunAsync(invocation, config, expectJson: true, cancellationToken);
     }
 
+    public Task<AssyInvocationResult> VadAsync(
+        string videoPath,
+        IReadOnlyList<VadWindow> windows,
+        CancellationToken cancellationToken)
+    {
+        var config = GetConfiguration();
+
+        if (_runtime.ExecutablePath is not { } exe)
+        {
+            return Task.FromResult(UnavailableResult(_runtime.GetStatus()));
+        }
+
+        var invocation = AssyArgumentBuilder.BuildVad(
+            exe, _mediaEncoder.EncoderPath, videoPath, windows);
+
+        // ! Its stdout is not a sync result, so the sync parser is not asked to read it.
+        return RunAsync(invocation, config, expectJson: false, cancellationToken);
+    }
+
     public Task<AssyInvocationResult> ShiftAsync(
         string subtitlePath,
         int milliseconds,

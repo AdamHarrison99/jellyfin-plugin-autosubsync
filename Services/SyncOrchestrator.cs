@@ -342,6 +342,10 @@ public class SyncOrchestrator
                 }
             }
 
+            // ! The reading belonged to a run that left this file alone. Kept past here, it
+            //   reopens the record through ToleranceWouldNowSync on every scan.
+            record.AlignedAtMs = null;
+
             var attempt = await RunEngineAsync(target, record, inputPath, cancellationToken)
                 .ConfigureAwait(false);
 
@@ -389,7 +393,9 @@ public class SyncOrchestrator
 
             // ! Before the strip. Verification needs the cues the engine placed, not rewritten text.
             var verdict = sample is not null && SyncVerifier.Starts(attempt.ProducedPath) is { } placed
-                ? SyncVerifier.Score(sample, placed)
+                ? await _verifier
+                    .ScoreAsync(target.VideoPath, sample, placed, cancellationToken)
+                    .ConfigureAwait(false)
                 : await _verifier
                     .VerifyAsync(target.VideoPath, attempt.ProducedPath, cancellationToken)
                     .ConfigureAwait(false);
@@ -401,8 +407,11 @@ public class SyncOrchestrator
                 TryDelete(attempt.ProducedPath);
 
                 var drifting = verdict.DriftMs is { } spread
-                    && Math.Abs(spread) > SyncVerifier.AlignedWithinMs;
-                var miss = Math.Abs(drifting ? verdict.DriftMs!.Value : verdict.BestShiftMs ?? 0);
+                    && Math.Abs(spread) > SyncVerifier.DriftWithinMs;
+
+                // ! Signed. The retroactivity hook reads it against a bound centred on the
+                //   authored lead, and a magnitude cannot be judged against that.
+                var miss = drifting ? verdict.DriftMs!.Value : verdict.BestShiftMs ?? 0;
 
                 _logger.LogWarning(
                     "Rejected the sync for {Item} ({Key}): {Miss} ms off the speech, drifting {Drifting}, "
@@ -427,7 +436,7 @@ public class SyncOrchestrator
             //   six windows. Hold an unchecked stretch to the tolerance the check applies.
             if (verdict.DriftMs is null
                 && change.DriftMs is { } stretch
-                && Math.Abs(stretch) > SyncVerifier.AlignedWithinMs)
+                && Math.Abs(stretch) > SyncVerifier.DriftWithinMs)
             {
                 TryDelete(attempt.ProducedPath);
 
@@ -439,11 +448,18 @@ public class SyncOrchestrator
                     stretch,
                     verdict.Windows);
 
+                // ! Two reasons, not one. A title too short to plan six windows can never be
+                //   measured; one that planned them and reached no fit is a different refusal.
+                var tooShort = verdict.Windows < SyncVerifier.DriftWindows;
+
                 return Fail(
                     record,
-                    "Rejected: the sync engine rescaled the subtitle across the runtime — the "
-                    + "audio check did not measure that change.",
-                    Math.Abs(stretch),
+                    tooShort
+                        ? "Rejected: the sync engine rescaled the subtitle across the runtime — this "
+                          + "title is too short for the audio check to measure drift."
+                        : "Rejected: the sync engine rescaled the subtitle across the runtime — the "
+                          + "audio check could not measure drift on this title.",
+                    stretch,
                     SubtitleStageKind.Verify);
             }
 
@@ -466,7 +482,7 @@ public class SyncOrchestrator
                     record,
                     "Rejected: the audio check reached no verdict and the sync engine moved the "
                     + "subtitle too far to accept unconfirmed.",
-                    Math.Abs(shift),
+                    shift,
                     SubtitleStageKind.Verify);
             }
 
@@ -1048,13 +1064,13 @@ public class SyncOrchestrator
     // ! A refusal the audio caused is not an engine failure. Widening the tolerance retries it.
     private static bool ToleranceWouldNowAccept(SyncRecord record, PluginConfiguration config)
         => record.RejectedOffsetMs is { } rejected
-           && rejected <= SyncVerifier.AlignedWithinMs;
+           && SyncVerifier.IsAligned(rejected);
 
     // ! A subtitle the audio agreed with, never handed to the engine. Tightening retries it.
     private static bool ToleranceWouldNowSync(SyncRecord record, PluginConfiguration config)
         => record.Status == SyncStatus.Skipped
            && record.AlignedAtMs is { } sits
-           && Math.Abs(sits) > SyncVerifier.AlignedWithinMs;
+           && !SyncVerifier.IsAligned(sits);
 
     // ! The mirror of the rejection rule. Lowering the minimum has to retry what it skipped.
     private static bool MinimumWouldNowSync(SyncRecord record, PluginConfiguration config)

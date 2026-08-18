@@ -23,6 +23,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<AssyRuntime>();
         serviceCollection.AddSingleton<AssyConfigFile>();
         serviceCollection.AddSingleton<IAssyCliRunner, AssyCliRunner>();
+        serviceCollection.AddSingleton<ISpeechOnsetSource, AssyVadOnsets>();
 
         serviceCollection.AddSingleton<SeConvRuntime>();
         serviceCollection.AddSingleton<ISeConvRunner, SeConvRunner>();

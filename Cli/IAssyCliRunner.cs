@@ -21,6 +21,9 @@ public class AssyInvocationResult
     public bool Succeeded => ExitCode == 0 && !TimedOut;
 }
 
+// One window of audio to read, in milliseconds from the start of the video.
+public readonly record struct VadWindow(long StartMs, long LengthMs);
+
 // The single seam between the plugin and assy-cli.
 public interface IAssyCliRunner
 {
@@ -28,6 +31,12 @@ public interface IAssyCliRunner
         string videoPath,
         string subtitlePath,
         string outputPath,
+        CancellationToken cancellationToken);
+
+    // Speech onsets from the voice detector inside the payload. JSON arrives on standard output.
+    Task<AssyInvocationResult> VadAsync(
+        string videoPath,
+        IReadOnlyList<VadWindow> windows,
         CancellationToken cancellationToken);
 
     Task<AssyInvocationResult> ShiftAsync(

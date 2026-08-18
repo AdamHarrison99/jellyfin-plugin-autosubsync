@@ -90,11 +90,16 @@ public class PluginConfiguration : BasePluginConfiguration
 
     public bool RefreshItemAfterSync { get; set; }
 
-    // ! Every setting that changes what gets written; throttling settings are absent by design.
-    //   A record stamped with anything else is stale and runs again.
+    // ! Bump on any change to what the audio check would decide. Nothing else reopens a record
+    //   when the logic moves and no setting does.
+    public const string CheckRevision = "check2";
+
+    // ! Everything that changes what gets written, settings and check revision alike; throttling
+    //   is absent by design. A record stamped with anything else is stale and runs again.
     public string OutcomeStamp()
         => string.Join(
             '|',
+            CheckRevision,
             DryRunMode ? "dry" : "live",
             RequireAudioConfirmation ? "confirmed" : "scored",
             RemoveHearingImpairedTags ? "hi-" : "hi+",

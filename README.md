@@ -56,7 +56,7 @@ Every setting is explained on the settings page. In short:
 | Setting | Default | |
 | --- | --- | --- |
 | Dry run mode | On | Finds and records everything, changes nothing. |
-| Only sync when audio check is conclusive | On | Leaves the subtitle alone when the audio cannot confirm the result. |
+| Only sync when the audio check is conclusive | On | Leaves the subtitle alone when the audio cannot confirm the result. |
 | Libraries | *none* | Nothing runs until you pick some. |
 | Process external subtitle files | On | Sidecar files next to your media. |
 | Process embedded subtitle tracks | Off | Extracted to a new file; the video is never modified, so Jellyfin then lists both. |
@@ -83,10 +83,20 @@ Files the plugin writes alongside your originals carry an autosubsync marker in 
 Every subtitle is scored against the video's own audio, before and after syncing. It costs a few
 seconds against a sync that takes minutes.
 
-Some titles cannot be measured; a film under a continuous score may never give a clear answer. Those
-are left alone by default — all that remains to judge them is the sync engine's own opinion of its
-work, and that is sometimes confidently wrong. Untick **Only sync when audio check is conclusive**
-to let it decide instead.
+When that first reading cannot decide, a second pass runs voice detection over the same audio and
+scores the subtitle against detected speech instead. It reaches an answer on titles the first pass
+cannot measure, and it refuses as readily as it accepts.
+
+Some titles cannot be measured by either pass; a film under a continuous score may never give a
+clear answer. Those are left alone by default — all that remains to judge them is the sync engine's
+own opinion of its work, and that is sometimes confidently wrong. Untick **Only sync when the audio
+check is conclusive** to let it decide instead.
+
+### After updating the plugin
+
+**Run a full library sync after an update.** Stored results are re-judged only as each subtitle is
+re-processed, so until that scan runs the counts on the settings page describe what the previous
+version decided. The scan is cheap on subtitles that are already in sync.
 
 ## Undoing everything
 

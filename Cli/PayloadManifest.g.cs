@@ -17,12 +17,12 @@ public static class PayloadManifest
     public static readonly PayloadTool AssyCli = new(
         "assy-cli",
         "assy-cli",
-        "6.4",
+        "2.0",
         // ! Compiled in. A configurable download host is arbitrary code execution.
-        "https://github.com/AdamHarrison99/jellyfin-plugin-autosubsync/releases/download/payload-v6.4",
+        "https://github.com/AdamHarrison99/jellyfin-plugin-autosubsync/releases/download/payload-v2.0",
         [
-            new("win-x64", "assy-cli-6.4-win-x64.zip", "bbce3c474e8728b66970280f8f00c59349d4b4ea6dc2396ddc803815c1a06357", 42108201L, PayloadArchiveFormat.Zip),
-            new("linux-x64", "assy-cli-6.4-linux-x64.zip", "77b86c7f690def81d309911e3f4c5ba5bea801ec0a6f4ab0734a0709df7d5a68", 93838040L, PayloadArchiveFormat.Zip)
+            new("win-x64", "assy-cli-2.0-win-x64.zip", "c29e41e32a8ef36c979b5ee71779f195f4697e880d91490baf4242d42ca190e2", 42254865L, PayloadArchiveFormat.Zip),
+            new("linux-x64", "assy-cli-2.0-linux-x64.zip", "936f3ba5d2b20eb7407e4d6db5753d16962ab33daeb3d31349b9ed6b0ca85bfb", 94421554L, PayloadArchiveFormat.Zip)
         ]);
 
     public static readonly PayloadTool Seconv = new(

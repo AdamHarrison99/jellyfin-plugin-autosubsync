@@ -41,6 +41,36 @@ public static class AssyArgumentBuilder
         return new Invocation(executablePath, args);
     }
 
+    // ! The subcommand comes first and no global option precedes it. The payload dispatches on
+    //   the first argument, and anything ahead of it hands the call to the upstream parser.
+    public static Invocation BuildVad(
+        string executablePath,
+        string ffmpegPath,
+        string videoPath,
+        IReadOnlyList<VadWindow> windows)
+    {
+        var args = new List<string>();
+
+        args.Add("vad");
+        args.Add(videoPath);
+
+        // ! Named, never inherited from PATH. The engine's own ffmpeg is not the one to read with.
+        args.Add("--ffmpeg");
+        args.Add(ffmpegPath);
+
+        foreach (var window in windows)
+        {
+            args.Add("--window");
+            args.Add(string.Create(
+                System.Globalization.CultureInfo.InvariantCulture,
+                $"{window.StartMs}:{window.LengthMs}"));
+        }
+
+        args.Add("--json");
+
+        return new Invocation(executablePath, args);
+    }
+
     public static Invocation BuildShift(
         string executablePath,
         string configFilePath,

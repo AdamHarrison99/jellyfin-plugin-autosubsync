@@ -302,11 +302,12 @@
 
                     <label class="checkboxContainer">
                         <input is="emby-checkbox" type="checkbox" id="chkRequireAudioConfirmation" />
-                        <span>Only sync when audio check is conclusive</span>
+                        <span>Only sync when the audio checks and voice detection are conclusive</span>
                     </label>
                     <div class="fieldDescription">
-                        The audio check always runs. When this is enabled, a subtitle it cannot
-                        confidently decide on is left alone rather than written. Those are listed as "rejected as inconclusive"; untick this to retry them on the next
+                        The audio check always runs, and falls back to voice detection when the first pass cannot decide.
+                        When this is enabled, a subtitle neither pass can confidently decide on is left alone rather than
+                        written. Those are listed as "rejected as inconclusive"; untick this to retry them on the next
                         sync.
                     </div>
 
