@@ -144,8 +144,9 @@ public class PayloadFetcher
         var url = tool.UrlFor(asset);
 
         _logger.LogInformation(
-            "Downloading {Tool} {Version} for {Rid} ({Megabytes} MB) from {Url}",
+            "Downloading {Tool} {Version} payload {Payload} for {Rid} ({Megabytes} MB) from {Url}",
             tool.Name,
+            tool.ToolVersion,
             tool.Version,
             asset.Rid,
             asset.Size / 1_048_576,
@@ -247,7 +248,7 @@ public class PayloadFetcher
 
         return new PayloadFetchResult(
             PayloadFetchOutcome.Installed,
-            $"Installed {tool.Name} {tool.Version} for {asset.Rid}.");
+            $"Installed {tool.Name} {tool.ToolVersion} for {asset.Rid}.");
     }
 
     internal static void ExtractChecked(string archivePath, string destination, PayloadArchiveFormat format)

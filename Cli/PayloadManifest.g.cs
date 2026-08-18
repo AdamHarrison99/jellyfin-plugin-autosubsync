@@ -18,6 +18,7 @@ public static class PayloadManifest
         "assy-cli",
         "assy-cli",
         "2.0",
+        "6.4",
         // ! Compiled in. A configurable download host is arbitrary code execution.
         "https://github.com/AdamHarrison99/jellyfin-plugin-autosubsync/releases/download/payload-v2.0",
         [
@@ -28,6 +29,7 @@ public static class PayloadManifest
     public static readonly PayloadTool Seconv = new(
         "seconv",
         "seconv",
+        "5.1.0",
         "5.1.0",
         // ! Compiled in. A configurable download host is arbitrary code execution.
         "https://github.com/SubtitleEdit/subtitleedit/releases/download/v5.1.0",
@@ -48,6 +50,8 @@ public record PayloadTool(
     string Name,
     string BinaryName,
     string Version,
+    // The bundled tool's own version. Shown to the user, never used as the cache key.
+    string ToolVersion,
     string BaseUrl,
     IReadOnlyList<PayloadAsset> Assets)
 {

@@ -39,7 +39,7 @@ public class PayloadRuntime
 
     public PayloadTool Tool => _tool;
 
-    public string Version => _tool.Version;
+    public string ToolVersion => _tool.ToolVersion;
 
     public string? ExecutablePath => GetStatus().ExecutablePath;
 
@@ -119,7 +119,7 @@ public class PayloadRuntime
         if (_fetcher.IsRunning(_tool))
         {
             return new RuntimeStatus(
-                PayloadReadiness.Fetching, null, $"Downloading {_tool.Name} {_tool.Version}.");
+                PayloadReadiness.Fetching, null, $"Downloading {_tool.Name} {_tool.ToolVersion}.");
         }
 
         if (_tool.For(rid) is null)
@@ -133,18 +133,18 @@ public class PayloadRuntime
         return new RuntimeStatus(
             PayloadReadiness.Unavailable,
             null,
-            $"The {_tool.Name} {_tool.Version} payload has not been downloaded yet.");
+            $"The {_tool.Name} {_tool.ToolVersion} payload has not been downloaded yet.");
     }
 
     private RuntimeStatus Ready(string path)
-        => new(PayloadReadiness.Ready, path, $"{_tool.Name} {_tool.Version} is ready.");
+        => new(PayloadReadiness.Ready, path, $"{_tool.Name} {_tool.ToolVersion} is ready.");
 
     private void Report(RuntimeStatus status)
     {
         if (status.IsReady)
         {
             _logger.LogInformation(
-                "Using {Tool} {Version} at {Path}", _tool.Name, _tool.Version, status.ExecutablePath);
+                "Using {Tool} {Version} at {Path}", _tool.Name, _tool.ToolVersion, status.ExecutablePath);
             return;
         }
 
