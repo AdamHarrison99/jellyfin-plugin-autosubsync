@@ -92,12 +92,6 @@ clear answer. Those are left alone by default — all that remains to judge them
 own opinion of its work, and that is sometimes confidently wrong. Untick **Only sync when the audio checks
 and voice detection are conclusive** to let it decide instead.
 
-### After updating the plugin
-
-**Run a full library sync after an update.** Stored results are re-judged only as each subtitle is
-re-processed, so until that scan runs the counts on the settings page describe what the previous
-version decided. The scan is cheap on subtitles that are already in sync.
-
 ## Undoing everything
 
 Overwritten and removed subtitles are backed up in the plugin's data folder, not beside your media.
