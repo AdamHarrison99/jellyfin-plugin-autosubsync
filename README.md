@@ -83,14 +83,9 @@ Files the plugin writes alongside your originals carry an autosubsync marker in 
 Every subtitle is scored against the video's own audio, before and after syncing. It costs a few
 seconds against a sync that takes minutes.
 
-When that first reading cannot decide, a second pass runs voice detection over the same audio and
-scores the subtitle against detected speech instead. It reaches an answer on titles the first pass
-cannot measure, and it refuses as readily as it accepts.
-
-Some titles cannot be measured by either pass; a film under a continuous score may never give a
+Some titles cannot be measured by any of the check passes; a film under a continuous score may never give a
 clear answer. Those are left alone by default — all that remains to judge them is the sync engine's
-own opinion of its work, and that is sometimes confidently wrong. Untick **Only sync when the audio checks
-and voice detection are conclusive** to let it decide instead.
+own opinion of its work, and that is sometimes confidently wrong. Untick **Only sync when the audio checks are conclusive** to let it decide instead.
 
 ## Undoing everything
 
@@ -114,4 +109,4 @@ This plugin decides what to sync, when, and where the result goes.
 
 ---
 
-*This project was built utilizing AI code development tools ([Claude Code](https://www.anthropic.com/claude-code)).*
+*This project was built utilizing AI code development tools ([Claude Code](https://www.anthropic.com/claude-cod
