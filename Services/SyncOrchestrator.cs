@@ -308,8 +308,25 @@ public class SyncOrchestrator
 
                 if (before is { Verdict: SyncVerdict.Aligned, BestShiftMs: { } sits })
                 {
-                    record.Status = SyncStatus.Skipped;
-                    record.AlignedAtMs = sits;
+                    // Re-reading the plugin's own file and finding it still aligned is not a skip.
+                    var ours = StillOurOutput(record, target, target.SubtitlePath);
+
+                    if (ours)
+                    {
+                        record.Status = SyncStatus.Synced;
+
+                        // ! A skip reason left on a synced row reopens it through the hooks below.
+                        record.AlignedAtMs = null;
+                        record.SkippedMovementMs = null;
+                    }
+                    else
+                    {
+                        record.Status = SyncStatus.Skipped;
+                        record.AlignedAtMs = sits;
+
+                        // ! Measured against a file this row has stopped describing.
+                        record.AppliedOffsetMs = null;
+                    }
 
                     // ! An OCR'd track has no text on disk yet. Dropping it here leaves the user
                     //   nothing and points deduplication at a bitmap it cannot read.
@@ -339,10 +356,13 @@ public class SyncOrchestrator
                         record.OutputPath ??= target.SubtitlePath;
                     }
 
-                    record.Message = $"Skipped: already aligned with the audio ({sits} ms).";
+                    record.Message = ours
+                        ? $"Synced: still aligned with the audio ({sits} ms)."
+                        : $"Skipped: already aligned with the audio ({sits} ms).";
                     _logger.LogInformation(
-                        "Skipped {Item} ({Key}): its cues sit {Sits} ms from the speech, "
+                        "{Outcome} {Item} ({Key}): its cues sit {Sits} ms from the speech, "
                         + "{Windows} windows, peak {Strength:F2}x",
+                        ours ? "Confirmed" : "Skipped",
                         target.ItemName,
                         target.Key,
                         sits,
@@ -381,19 +401,34 @@ public class SyncOrchestrator
             if (change.ConstantMs is not null && moved < MinimumMovementMs)
             {
                 TryDelete(attempt.ProducedPath);
-                record.Status = SyncStatus.Skipped;
+
+                // The engine finding nothing left to move in the plugin's own file is not a skip.
+                var settled = StillOurOutput(record, target, target.SubtitlePath);
+                record.Status = settled ? SyncStatus.Synced : SyncStatus.Skipped;
 
                 // ! Returns before the post-sync stamp. The pre-check's Misaligned would stand,
                 //   and a discarded result is no verification failure.
                 record.RecordStage(SubtitleStageKind.Verify, StageOutcome.Skipped);
 
-                record.AppliedOffsetMs = change.ConstantMs;
-                record.SkippedMovementMs = moved;
-                record.Message =
-                    $"Skipped: the sync engine moved the subtitle less than the "
-                    + $"{MinimumMovementMs} ms minimum ({moved} ms).";
+                if (settled)
+                {
+                    // ! A skip reason left on a synced row reopens it through the hooks below.
+                    record.AlignedAtMs = null;
+                    record.SkippedMovementMs = null;
+                }
+                else
+                {
+                    record.AppliedOffsetMs = change.ConstantMs;
+                    record.SkippedMovementMs = moved;
+                }
+
+                record.Message = settled
+                    ? $"Synced: the sync engine found nothing left to move ({moved} ms)."
+                    : $"Skipped: the sync engine moved the subtitle less than the "
+                        + $"{MinimumMovementMs} ms minimum ({moved} ms).";
                 _logger.LogInformation(
-                    "Skipped {Item} ({Key}): {Moved} ms is below the {Minimum} ms minimum",
+                    "{Outcome} {Item} ({Key}): {Moved} ms is below the {Minimum} ms minimum",
+                    settled ? "Confirmed" : "Skipped",
                     target.ItemName,
                     target.Key,
                     moved,
@@ -449,29 +484,41 @@ public class SyncOrchestrator
                 && change.DriftMs is { } stretch
                 && Math.Abs(stretch) > SyncVerifier.DriftWithinMs)
             {
-                TryDelete(attempt.ProducedPath);
+                if (!SyncVerifier.ReleasedByCoarseDrift(verdict))
+                {
+                    TryDelete(attempt.ProducedPath);
 
-                _logger.LogWarning(
-                    "Rejected the sync for {Item} ({Key}): it stretches the subtitle by {Drift} ms "
-                    + "across the runtime and the audio check never measured drift ({Windows} windows)",
+                    _logger.LogWarning(
+                        "Rejected the sync for {Item} ({Key}): it stretches the subtitle by {Drift} ms "
+                        + "across the runtime and the audio check never measured drift ({Windows} windows)",
+                        target.ItemName,
+                        target.Key,
+                        stretch,
+                        verdict.Windows);
+
+                    // ! Two reasons, not one. A title too short to plan six windows can never be
+                    //   measured; one that planned them and reached no fit is a different refusal.
+                    var tooShort = verdict.Windows < SyncVerifier.DriftWindows;
+
+                    return Fail(
+                        record,
+                        tooShort
+                            ? "Rejected: the sync engine rescaled the subtitle across the runtime — this "
+                              + "title is too short for the audio check to measure drift."
+                            : "Rejected: the sync engine rescaled the subtitle across the runtime — the "
+                              + "audio check could not measure drift on this title.",
+                        stretch,
+                        SubtitleStageKind.Verify);
+                }
+
+                _logger.LogInformation(
+                    "Released the sync for {Item} ({Key}): it stretches the subtitle by {Drift} ms "
+                    + "and the audio check reads {Coarse} ms of drift over {Windows} windows",
                     target.ItemName,
                     target.Key,
                     stretch,
+                    verdict.CoarseDriftMs,
                     verdict.Windows);
-
-                // ! Two reasons, not one. A title too short to plan six windows can never be
-                //   measured; one that planned them and reached no fit is a different refusal.
-                var tooShort = verdict.Windows < SyncVerifier.DriftWindows;
-
-                return Fail(
-                    record,
-                    tooShort
-                        ? "Rejected: the sync engine rescaled the subtitle across the runtime — this "
-                          + "title is too short for the audio check to measure drift."
-                        : "Rejected: the sync engine rescaled the subtitle across the runtime — the "
-                          + "audio check could not measure drift on this title.",
-                    stretch,
-                    SubtitleStageKind.Verify);
             }
 
             // ! Backstop for a check that confirmed nothing. not a tight leash: reaching here means
@@ -1083,11 +1130,17 @@ public class SyncOrchestrator
            && record.AlignedAtMs is { } sits
            && !SyncVerifier.IsAligned(sits);
 
-    // ! The mirror of the rejection rule. Lowering the minimum has to retry what it skipped.
+    // ! Only the minimum's own exit sets SkippedMovementMs; an applied offset measures a sync.
     private static bool MinimumWouldNowSync(SyncRecord record, PluginConfiguration config)
         => record.Status == SyncStatus.Skipped
-           && (record.SkippedMovementMs ?? record.AppliedOffsetMs) is { } moved
+           && record.SkippedMovementMs is { } moved
            && moved >= MinimumMovementMs;
+
+    // ! The file on disk is this row's own placement. Provenance defaults to Retimed, so a
+    //   backup or an explicit Created is the only proof the plugin wrote it.
+    private static bool StillOurOutput(SyncRecord record, SubtitleTarget target, string? subtitlePath)
+        => (record.BackupPath is not null || record.Provenance == SubtitleProvenance.Created)
+           && FingerprintMatches(record, target, subtitlePath);
 
     // An unstamped record predates stamping and is taken at face value.
     private static bool SettingsUnchanged(SyncRecord record, PluginConfiguration config)

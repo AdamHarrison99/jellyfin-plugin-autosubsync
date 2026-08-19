@@ -23,7 +23,8 @@ public readonly record struct VerificationResult(
     double Strength,
     int Hits = 0,
     int Floor = 0,
-    int Onsets = 0);
+    int Onsets = 0,
+    int? CoarseDriftMs = null);
 
 // The sweep's account of itself: the winner, and the numbers its gates judged it by.
 public readonly record struct ShiftFit(
@@ -62,6 +63,10 @@ public partial class SyncVerifier
 
     // ! Drift is the difference between two fitted shifts, and the lead cancels in it.
     public const int DriftWithinMs = 500;
+
+    // ! Raw, and deliberately tighter than DriftWithinMs. Two windows a side read a given
+    //   end-to-end error larger than three a side do.
+    public const int CoarseDriftWithinMs = 300;
 
     private const int SweepMs = 4_000;
     private const int StepMs = 25;
@@ -125,8 +130,8 @@ public partial class SyncVerifier
             : await ScoreAsync(videoPath, sample, starts, cancellationToken).ConfigureAwait(false);
     }
 
-    // ! The second pass runs only where the first reached no verdict. A Misaligned reading of the
-    //   silence ends it, and voice detection is never asked.
+    // ! The second pass runs where the first reached no verdict, and where an aligned reading
+    //   carried no coarse drift. A Misaligned reading of the silence ends it.
     public async Task<VerificationResult> ScoreAsync(
         string videoPath,
         AudioSample sample,
@@ -135,7 +140,7 @@ public partial class SyncVerifier
     {
         var first = Score(sample, starts);
 
-        if (first.Verdict != SyncVerdict.Inconclusive || _speech is null)
+        if (_speech is null || !WorthASecondPass(first, sample))
         {
             return first;
         }
@@ -149,6 +154,25 @@ public partial class SyncVerifier
         }
 
         var second = Score(new AudioSample(speech.Onsets, sample.Plan, speech.Windows), starts);
+
+        if (first.Verdict == SyncVerdict.Aligned)
+        {
+            // ! Only a reading the first pass lacked. A detector may not overturn a verdict.
+            if (second is not { Verdict: SyncVerdict.Aligned, CoarseDriftMs: not null })
+            {
+                return first;
+            }
+
+            _logger.LogInformation(
+                "Voice detection read {Coarse} ms of coarse drift on {Video}, which the silence "
+                + "pass left unmeasured ({Onsets} onsets, {Windows} windows)",
+                second.CoarseDriftMs,
+                videoPath,
+                second.Onsets,
+                second.Windows);
+
+            return second;
+        }
 
         if (second.Verdict == SyncVerdict.Inconclusive)
         {
@@ -174,6 +198,15 @@ public partial class SyncVerifier
 
         return second;
     }
+
+    // A reading worth a second opinion: no verdict at all, or an aligned one on a plan the
+    // release condition could have read and did not. The window test is Drift's own.
+    private static bool WorthASecondPass(VerificationResult first, AudioSample sample)
+        => first.Verdict == SyncVerdict.Inconclusive
+           || (first.Verdict == SyncVerdict.Aligned
+               && first.CoarseDriftMs is null
+               && sample.Plan.Count / 2 >= 2
+               && sample.Plan.Count < DriftWindows);
 
     // The cue start times, in order. Null when there are too few to say anything.
     public static List<long>? Starts(string subtitlePath)
@@ -246,6 +279,12 @@ public partial class SyncVerifier
     public static bool IsAligned(long shiftMs)
         => Math.Abs(shiftMs - TypicalLeadMs) <= AlignedWithinMs;
 
+    // Whether a coarse reading is flat enough to release a rescale the drift test never judged.
+    public static bool ReleasedByCoarseDrift(VerificationResult result)
+        => result.Verdict == SyncVerdict.Aligned
+           && result.CoarseDriftMs is { } coarse
+           && Math.Abs(coarse) <= CoarseDriftWithinMs;
+
     // How far the cues sit from the speech, and whether that answer holds across the film.
     public static VerificationResult Score(AudioSample sample, List<long> starts)
     {
@@ -259,16 +298,16 @@ public partial class SyncVerifier
         // ! Halved, each side is a shorter and weaker sample, so it is only asked at all once
         //   there are windows to spare. Two a side is noise arguing with noise.
         var halves = 0d;
-        var drift = sample.Windows >= DriftWindows ? Drift(sample, starts, out halves) : null;
+        var judged = sample.Windows >= DriftWindows ? Drift(sample, starts, out halves) : null;
 
         // ! A rate error can beat the sweep outright: no one shift fits the film, while each
         //   half of it still fits its own. That disagreement is the answer.
-        if (drift is { } spread && Math.Abs(spread) > DriftWithinMs)
+        if (judged is { } spread && Math.Abs(spread) > DriftWithinMs)
         {
             return new VerificationResult(
                 SyncVerdict.Misaligned,
                 whole.Shift,
-                drift,
+                judged,
                 sample.Windows,
                 halves,
                 whole.Hits,
@@ -281,15 +320,24 @@ public partial class SyncVerifier
             return Nothing(sample.Windows, whole);
         }
 
+        var verdict = IsAligned(best) ? SyncVerdict.Aligned : SyncVerdict.Misaligned;
+
+        // ! Two windows a side of a short plan, measured only where the release condition could
+        //   read it. It is carried on the result and reaches no branch above.
+        var coarse = verdict == SyncVerdict.Aligned && sample.Plan.Count < DriftWindows
+            ? Drift(sample, starts, out _)
+            : null;
+
         return new VerificationResult(
-            IsAligned(best) ? SyncVerdict.Aligned : SyncVerdict.Misaligned,
+            verdict,
             best,
-            drift,
+            judged,
             sample.Windows,
             whole.Strength,
             whole.Hits,
             whole.Floor,
-            whole.Onsets);
+            whole.Onsets,
+            coarse);
     }
 
     // ! A rate error hides from a single shift: right at the start, minutes out at the end.

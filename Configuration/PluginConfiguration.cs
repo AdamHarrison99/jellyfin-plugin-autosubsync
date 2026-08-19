@@ -92,7 +92,7 @@ public class PluginConfiguration : BasePluginConfiguration
 
     // ! Bump on any change to what the audio check would decide. Nothing else reopens a record
     //   when the logic moves and no setting does.
-    public const string CheckRevision = "check2";
+    public const string CheckRevision = "check3";
 
     // ! Everything that changes what gets written, settings and check revision alike; throttling
     //   is absent by design. A record stamped with anything else is stale and runs again.
