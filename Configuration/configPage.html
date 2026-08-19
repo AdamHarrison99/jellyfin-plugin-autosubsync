@@ -434,12 +434,11 @@
 
                     <div class="inputContainer">
                         <label class="inputLabel" for="txtConcurrency">Concurrent syncs</label>
-                        <input is="emby-input" type="number" id="txtConcurrency" min="0" max="8" />
+                        <input is="emby-input" type="number" id="txtConcurrency" min="0" max="64" />
                         <div class="fieldDescription">
-                            How many subtitles the full library scan, and new items as they arrive,
+                                                        <strong>0 = automatic</strong>: How many subtitles the full library scan, and new items as they arrive,
                             are synced at once. Each sync reads the whole video file to analyse its
                             audio, so the limit is often your storage rather than your CPU.
-                            <strong>0 = automatic</strong>: Set a number to override it.
                         </div>
                     </div>
 
@@ -635,7 +634,7 @@
                         + statCard(status.Synced, 'synced')
                         + statCard(formatOffset(status.MedianAppliedOffsetMs), 'median shift')
                         + statCard(status.Skipped, 'already in sync')
-                        + statCard(status.Rejected, 'rejected by audio check', status.Rejected ? 'isRejected' : '')
+                        + statCard(status.Rejected, 'rejected by audio checks', status.Rejected ? 'isRejected' : '')
                         + statCard(status.Failed, 'failed', status.Failed ? 'isFailed' : '')
                         + statCard(status.SourceMissing, 'source gone')
                         + statCard(status.Unsupported, 'unsupported')
@@ -707,7 +706,7 @@
 
                         page.querySelector('#statusUnsupported').innerHTML =
                             reasonBlock('Unsupported tracks', status.UnsupportedReasons)
-                            + reasonBlock('Rejected by audio check', status.RefusalReasons)
+                            + reasonBlock('Rejected by audio checks', status.RefusalReasons)
                             + reasonBlock('Failure reasons', status.FailureReasons);
 
                         page.querySelector('#statusPanel').style.display = '';
@@ -815,7 +814,7 @@
                         config.DeduplicateSubtitles = page.querySelector('#chkDeduplicate').checked;
                         config.LanguageAllowList = splitList(page.querySelector('#txtLanguages').value);
 
-                        config.MaxConcurrentSyncs = readInt(page, '#txtConcurrency', 0, 0, 8);
+                        config.MaxConcurrentSyncs = readInt(page, '#txtConcurrency', 0, 0, 64);
 
                         config.AutoSyncOnItemAdded = page.querySelector('#chkAutoOnAdd').checked;
                         config.RefreshItemAfterSync = page.querySelector('#chkRefreshAfter').checked;

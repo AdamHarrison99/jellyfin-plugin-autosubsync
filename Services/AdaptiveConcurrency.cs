@@ -5,9 +5,14 @@ namespace Jellyfin.Plugin.AutoSubSync.Services;
 // Hill-climbs the concurrency level that moves the most work per unit time.
 public class AdaptiveConcurrency
 {
-    private const int SamplesPerLevel = 6;
+    // ! Twelve, not six. The decision margin sits near the standard error of this mean, so
+    //   halving the margin without doubling the sample makes the climb chase its own noise.
+    private const int SamplesPerLevel = 12;
 
-    private const double MeaningfulChange = 0.10;
+    private const double MeaningfulChange = 0.07;
+
+    // ! Held below the peak the climb found, so a settled run leaves the box some room.
+    private const int SettleBackOff = 1;
 
     private const int ResettleAfterSamples = 150;
 
@@ -22,6 +27,7 @@ public class AdaptiveConcurrency
     private double _sumObserved;
 
     private int _step = 1;
+    private int _peak = 1;
     private int _measuredLevel;
     private double _measuredThroughput;
 
@@ -147,12 +153,18 @@ public class AdaptiveConcurrency
         _measuredLevel = 0;
         _measuredThroughput = 0;
 
-        if (level != _level)
-        {
-            _level = level;
-        }
+        // ! The peak is what re-probing measures from. Backing off the operating level and then
+        //   climbing from *that* would take another slot off on every resettle, forever.
+        _peak = level;
 
-        _logger.LogInformation("Concurrency settled at {Level} concurrent syncs", _level);
+        // ! Never below two. Backing a peak of two down to one costs half the throughput, which
+        //   is not the small margin this is meant to leave.
+        _level = Math.Max(level - SettleBackOff, Math.Min(level, 2));
+
+        _logger.LogInformation(
+            "Concurrency settled at {Level} concurrent syncs, one below the {Peak} the climb found",
+            _level,
+            _peak);
     }
 
     private void CountTowardsResettle(int ceiling)
@@ -167,6 +179,10 @@ public class AdaptiveConcurrency
         // Load on the box changes; what was optimal an hour ago may not be.
         _probing = true;
         _samplesSinceSettled = 0;
+
+        // ! From the peak, not the backed-off level: the comparison that ends the climb has to be
+        //   made against the same level it was made against last time.
+        _level = Math.Clamp(_peak, 1, ceiling);
 
         // ! Probe towards the end that has room, or the next move is a no-op forever.
         _step = _level < ceiling ? 1 : -1;

@@ -7,7 +7,7 @@ namespace Jellyfin.Plugin.AutoSubSync.Services;
 public class SyncQueue : IDisposable
 {
     // The ceiling the setting itself is clamped to.
-    internal const int HardMax = 8;
+    internal const int HardMax = PluginConfiguration.MaxConcurrency;
 
     private readonly object _lock = new();
     private readonly SemaphoreSlim _semaphore = new(HardMax, HardMax);

@@ -78,6 +78,9 @@ public class PluginConfiguration : BasePluginConfiguration
 
     public const int AutoConcurrency = 0;
 
+    // A backstop against a runaway, not a tuned limit. The probe settles far below it.
+    public const int MaxConcurrency = 64;
+
     public int MaxConcurrentSyncs { get; set; } = AutoConcurrency;
 
     // Hung-process guard, not a throttle.
@@ -108,15 +111,9 @@ public class PluginConfiguration : BasePluginConfiguration
             OutputEncoding,
             MarkerSuffix);
 
-    // Resolves AutoConcurrency to a real thread count.
+    // Resolves AutoConcurrency to the ceiling the probe climbs towards.
     public int ResolveMaxConcurrentSyncs()
-        => MaxConcurrentSyncs > 0
-            ? MaxConcurrentSyncs
-            : AutoConcurrencyFor(Environment.ProcessorCount);
-
-    // ! Half the cores, and never more. This is the ceiling to probe towards, not a starting point.
-    internal static int AutoConcurrencyFor(int processorCount)
-        => Math.Clamp(processorCount / 2, 1, 8);
+        => MaxConcurrentSyncs > 0 ? MaxConcurrentSyncs : MaxConcurrency;
 
     // ! Called on load, never on save. Folding after a save would overwrite the fresh choice.
     public void AdoptLegacySettings()
@@ -131,7 +128,7 @@ public class PluginConfiguration : BasePluginConfiguration
     // Called on every save; the API accepts arbitrary JSON.
     public void Normalize()
     {
-        MaxConcurrentSyncs = Math.Clamp(MaxConcurrentSyncs, AutoConcurrency, 8);
+        MaxConcurrentSyncs = Math.Clamp(MaxConcurrentSyncs, AutoConcurrency, MaxConcurrency);
         PerSyncTimeoutMinutes = Math.Clamp(PerSyncTimeoutMinutes, 1, 240);
 
         // ! Must never be empty.
