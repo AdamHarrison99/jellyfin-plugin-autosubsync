@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Jellyfin.Plugin.AutoSubSync.Data;
 using Jellyfin.Plugin.AutoSubSync.Models;
@@ -38,10 +39,13 @@ public class RecordReconciler
             var offered = keys.Contains(record.TargetKey)
                 || (record.OutputPath is not null && paths.Contains(record.OutputPath));
 
-            // ! Never restamped Stale. Reopened by the removed file itself, ¬by its target key.
+            // ! Never restamped Stale. Reopened by the removed file itself, not by its target key.
             if (record.Retired)
             {
-                if (record.OutputPath is null || !paths.Contains(record.OutputPath))
+                // ! The file itself, not the offer. Stale item metadata still names a removed one.
+                if (record.OutputPath is null
+                    || !paths.Contains(record.OutputPath)
+                    || !File.Exists(record.OutputPath))
                 {
                     continue;
                 }

@@ -8,7 +8,7 @@ public static class SubtitleContent
     // ! Bounds a corrupt or mislabelled file. Real subtitles are far below this.
     private const int MaxLinesRead = 400_000;
 
-    // ! Bounds the same file by size. A file w/ no line break is one line, so the line cap
+    // ! Bounds the same file by size. A file with no line break is one line, so the line cap
     //   cannot stop ReadLines allocating its whole length.
     private const long MaxBytesRead = 16L * 1024 * 1024;
 

@@ -94,7 +94,7 @@ internal static class FfmpegProcess
         }
     }
 
-    // ! Trimmed as it grows, ¬only at the end. A chatty child holds its whole output in
+    // ! Trimmed as it grows, not only at the end. A chatty child holds its whole output in
     //   memory until its timeout fires; the slack keeps the trim amortized.
     private static void AppendBounded(StringBuilder builder, string line, int keep)
     {

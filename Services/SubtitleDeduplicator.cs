@@ -248,10 +248,10 @@ public class SubtitleDeduplicator
 
         record.BackupPath ??= backup;
 
-        // ! Retired, ¬Stale: off the cards now, but the removal stays on the stage table.
+        // ! Retired, not Stale: off the cards now, but the removal stays on the stage table.
         record.Retired = true;
 
-        // ! Shared w/ the store, which identifies a removal by this text when it retires one.
+        // ! Shared with the store, which identifies a removal by this text when it retires one.
         MarkStage(
             record,
             StageOutcome.Succeeded,
@@ -301,7 +301,7 @@ public class SubtitleDeduplicator
             keeper.Path,
             canonical);
 
-        // ! Saved, ¬staged. The row counts duplicates removed, and a rename removed none; the
+        // ! Saved, not staged. The row counts duplicates removed, and a rename removed none; the
         //   save is still required or rollback loses where to put the backup.
         Save(keeper.Record);
     }

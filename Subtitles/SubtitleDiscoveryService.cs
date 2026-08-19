@@ -139,7 +139,7 @@ public class SubtitleDiscoveryService
     private static string LanguageKey(string? language)
         => LanguageCodes.Normalize(language) ?? string.Empty;
 
-    // ! Slot, ¬language. A signs track carries the language of the full one and has to survive.
+    // ! Slot, not language. A signs track carries the language of the full one and has to survive.
     private void SuppressOcrCoveredByText(List<Candidate> candidates, BaseItem item)
     {
         var all = candidates.Select(c => c.Target).ToList();

@@ -9,7 +9,7 @@ public static class SyncOutcome
     public const string NoVerdictRefusal =
         "Rejected: the audio check reached no verdict on this title — rejected as inconclusive.";
 
-    // ! ¬RejectedOffsetMs: a refusal that reached no verdict carries no offset.
+    // ! Not RejectedOffsetMs: a refusal that reached no verdict carries no offset.
     public static bool IsAudioRefusal(SyncRecord record)
         => record.Status == SyncStatus.Failed && (record.RefusedByAudio ?? InferredRefusal(record));
 

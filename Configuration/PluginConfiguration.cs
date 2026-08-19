@@ -39,7 +39,7 @@ public class PluginConfiguration : BasePluginConfiguration
     // ! On, signs-and-songs tracks come back with everything else.
     public bool ProcessEmbeddedWhenExternalExists { get; set; }
 
-    // ! The element 1.3.0.0 and earlier wrote, w/ the opposite sense. Read only.
+    // ! The element 1.3.0.0 and earlier wrote, with the opposite sense. Read only.
     [XmlElement("SkipEmbeddedWhenExternalExists")]
     public bool? LegacySkipEmbeddedWhenExternalExists { get; set; }
 
@@ -142,7 +142,7 @@ public class PluginConfiguration : BasePluginConfiguration
         EnabledLibraryIds ??= [];
 
         // ! Reaches the engine as --encoding. An unknown value fails every sync, and the failure
-        //   names the engine, ¬this setting.
+        //   names the engine, not this setting.
         if (Array.IndexOf(SupportedEncodings, OutputEncoding?.Trim().ToLowerInvariant()) < 0)
         {
             OutputEncoding = "same_as_input";

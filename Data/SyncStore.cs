@@ -205,7 +205,7 @@ public class SyncStore : ISyncStore, IDisposable
             record.RejectedOffsetMs = null;
             record.Message = null;
 
-            // ! Clear it w/ the rest. A retained flag describes a run whose stages and offset
+            // ! Clear it with the rest. A retained flag describes a run whose stages and offset
             //   were just erased.
             record.RefusedByAudio = null;
             record.Stages?.Clear();
@@ -332,7 +332,7 @@ public class SyncStore : ISyncStore, IDisposable
         }
     }
 
-    // ! The removal message, ¬the stage kind. Canonicalize stamped the same kind and outcome on
+    // ! The removal message, not the stage kind. Canonicalize stamped the same kind and outcome on
     //   the survivor it renamed, and that row records no removal.
     internal const string RemovedAsDuplicate = "Removed as a duplicate of ";
 
@@ -431,7 +431,7 @@ public class SyncStore : ISyncStore, IDisposable
             record.RejectedOffsetMs = null;
             record.Message = null;
             // ! Everything describing the old run goes, as in ReopenFailed. The record is Pending
-            //   → it runs again and re-stamps.
+            //   and runs again, re-stamping.
             record.RefusedByAudio = null;
             record.Stages?.Clear();
             reopened++;

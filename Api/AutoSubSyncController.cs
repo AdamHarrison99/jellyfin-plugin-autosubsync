@@ -186,7 +186,7 @@ public class AutoSubSyncController : ControllerBase
         return builder.ToString();
     }
 
-    // ! Magnitude, ¬direction, over runs whose result was kept. Signed, an early subtitle
+    // ! Magnitude, not direction, over runs whose result was kept. Signed, an early subtitle
     //   cancels a late one.
     private static long? MedianAppliedOffset(List<SyncRecord> records)
     {

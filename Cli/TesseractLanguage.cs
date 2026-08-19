@@ -21,7 +21,7 @@ public static class TesseractLanguage
         [("uzb", "cyrl")] = "uzb_cyrl"
     };
 
-    // ! Placeholders, ¬languages. Naming one asks the reader for a model that cannot exist.
+    // ! Placeholders, not languages. Naming one asks the reader for a model that cannot exist.
     private static readonly HashSet<string> Untagged =
         new(StringComparer.Ordinal) { "und", "mis", "mul", "zxx" };
 

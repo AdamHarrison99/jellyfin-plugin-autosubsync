@@ -8,7 +8,7 @@ public readonly record struct OcrReading(int Words, double MeanWordLength, doubl
 {
     public bool IsJudgeable => Words >= OcrReadability.MinimumWords;
 
-    // ! Both, ¬either. One signal alone puts the bound within reach of a language of short
+    // ! Both, not either. One signal alone puts the bound within reach of a language of short
     //   words; the two measured noise readings fail both by a wide margin.
     public bool IsNoise
         => IsJudgeable
@@ -19,7 +19,7 @@ public readonly record struct OcrReading(int Words, double MeanWordLength, doubl
 // Decides whether OCR output is words or noise, from the shape of its text alone.
 public static class OcrReadability
 {
-    // ! Below the lowest real reading, ¬between the populations. Five real subtitles and two
+    // ! Below the lowest real reading, not between the populations. Five real subtitles and two
     //   usable reads run 3.93 to 7.39; the two noise readings are 2.53 and 2.72.
     public const double MinimumMeanWordLength = 3.5;
 

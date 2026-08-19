@@ -17,7 +17,7 @@ public sealed class SyncCancellation : IDisposable
         }
     }
 
-    // ! The old source is cancelled ¬disposed. A caller that read Token a moment ago is still
+    // ! The old source is cancelled, not disposed. A caller that read Token a moment ago is still
     //   linking against it, and disposing underneath that throws.
     public void StopAll()
     {

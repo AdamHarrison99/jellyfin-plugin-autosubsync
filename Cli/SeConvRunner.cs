@@ -77,7 +77,7 @@ public class SeConvRunner : ISeConvRunner
             arguments.Add("--no-vobsub-isolate-colors");
         }
 
-        // ! Handed verbatim to Tesseract's -l, so it must be a tessdata name, ¬an ISO code.
+        // ! Handed verbatim to Tesseract's -l, so it must be a tessdata name, not an ISO code.
         if (TesseractLanguage.Resolve(language) is { } code)
         {
             arguments.Add("--ocr-language:" + code);
@@ -298,7 +298,7 @@ public class SeConvRunner : ISeConvRunner
         }
     }
 
-    // ! Trimmed as it grows, ¬only at the end. A chatty child holds its whole output in
+    // ! Trimmed as it grows, not only at the end. A chatty child holds its whole output in
     //   memory until its timeout fires; the slack keeps the trim amortized.
     private static void AppendBounded(StringBuilder builder, string line, int keep)
     {

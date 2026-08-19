@@ -27,7 +27,7 @@ public class SyncOrchestrator
     //   an unmeasurable title must clear what a genuine alignment scores.
     private const double MinimumEngineScore = 40;
 
-    // Ceiling on a move nothing verified. Only reachable w/ audio confirmation turned off.
+    // Ceiling on a move nothing verified. Only reachable with audio confirmation turned off.
     private const long MaximumUnverifiedShiftMs = 60_000;
 
     private readonly IAssyCliRunner _runner;
@@ -184,12 +184,23 @@ public class SyncOrchestrator
             return;
         }
 
-        // ! A settled outcome is live work. Deduplication retires the row again behind this.
-        record.Retired = false;
+        // ! Only while the row's file is there. Deduplication re-retires behind this in the same
+        //   run; a later run re-offered a removed duplicate has nothing to.
+        if (StillOnDisk(record))
+        {
+            record.Retired = false;
+        }
 
         var stage = record.RecordStage(kind, SyncOutcome.StageFor(record.Status), record.ToolUsed);
         stage.Message = record.Message;
         stage.ElapsedMs = record.ElapsedMs;
+    }
+
+    // ! The row's own file, not the target's. A path it cannot test counts as present.
+    private static bool StillOnDisk(SyncRecord record)
+    {
+        var path = record.OutputPath ?? record.SourceSubtitlePath;
+        return path is null || File.Exists(path);
     }
 
     private static void RecordStage(
@@ -463,7 +474,7 @@ public class SyncOrchestrator
                     SubtitleStageKind.Verify);
             }
 
-            // ! Backstop for a check that confirmed nothing. ¬a tight leash: reaching here means
+            // ! Backstop for a check that confirmed nothing. not a tight leash: reaching here means
             //   audio confirmation is off, and a sidecar for another release is legitimately late.
             if (verdict.Verdict == SyncVerdict.Inconclusive
                 && change.ConstantMs is { } shift
@@ -494,7 +505,7 @@ public class SyncOrchestrator
                     : null;
 
             // ! Only where our own check could not measure the title, and only to refuse. The
-            //   engine scoring its own alignment is ¬evidence that it is right.
+            //   engine scoring its own alignment is not evidence that it is right.
             if (verdict.Verdict == SyncVerdict.Inconclusive)
             {
                 // ! The check ran and returned no answer, which is not the same as a pass. Where
@@ -1020,7 +1031,7 @@ public class SyncOrchestrator
         record.Message = twin.Message;
         record.AppliedOffsetMs = twin.AppliedOffsetMs;
         record.RejectedOffsetMs = twin.RejectedOffsetMs;
-        // ! Carry it w/ the status. A failure adopted without it reads as a tool failure.
+        // ! Carry it with the status. A failure adopted without it reads as a tool failure.
         record.RefusedByAudio = twin.RefusedByAudio;
         record.SkippedMovementMs = twin.SkippedMovementMs;
         record.ToolUsed = twin.ToolUsed;
@@ -1140,7 +1151,7 @@ public class SyncOrchestrator
         record.SkippedMovementMs = null;
 
         // ! The Verify stage is the audio check, so the kind names the refusal exactly. Written
-        //   on every failure, ¬only the refusals, so it can never describe an earlier run.
+        //   on every failure, not only the refusals, so it can never describe an earlier run.
         record.RefusedByAudio = kind == SubtitleStageKind.Verify;
         record.Message = string.IsNullOrWhiteSpace(message)
             ? "Failed: the sync did not complete."
