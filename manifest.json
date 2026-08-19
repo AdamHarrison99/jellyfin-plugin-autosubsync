@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.5.1.0",
+        "changelog": "A subtitle the plugin has already synced now stays in the synced count. Earlier versions could move it into the skipped group on a later run, so the synced total fell over time with nothing having actually changed. Stored results are re-judged once more as each subtitle is processed, so run a full library sync after updating to settle the counts. When the audio check finds a subtitle in sync but the title is too short for it to measure drift across, voice detection now reads that drift instead, which allows some syncs that were previously refused. A subtitle removed as a duplicate no longer returns when only stale metadata still offers it. The status panel names the version of the bundled sync engine rather than its packaging revision. The plugin is now licensed under the GNU Affero General Public License v3.0.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-autosubsync/releases/download/v1.5.1.0/autosubsync-v1.5.1.0.zip",
+        "checksum": "63a01bc0a6658ba99e7b1e59ef8fd9f6",
+        "timestamp": "2026-08-19T19:10:59Z"
+      },
+      {
         "version": "1.5.0.0",
         "changelog": "When the audio check cannot decide on a subtitle, a second pass now reads the same audio with voice detection and scores the subtitle against detected speech, which settles some of the titles the first pass could never measure. The check is also stricter about what counts as in sync: it judges alignment against the small lead subtitles are authored with rather than against zero, so results that are close but wrong are refused instead of written. Verdicts recorded by earlier versions were measured by the older rule and are re-judged as each subtitle is processed again, so run a full library sync after updating. A sync refused for rescaling the subtitle now says whether the title was simply too short for the check to measure drift. The sync engine has been rebuilt and downloads once more after this update.",
         "targetAbi": "10.11.0.0",

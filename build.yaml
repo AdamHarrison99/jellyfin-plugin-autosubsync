@@ -1,6 +1,6 @@
 name: "AutoSubSync"
 guid: "6dbc32c5-1c68-481e-b066-9521552a2615"
-version: "1.5.0.0"
+version: "1.5.1.0"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 overview: "Automatically synchronizes external and embedded subtitles across your library."
@@ -17,8 +17,9 @@ owner: "AdamHarrison99"
 artifacts:
   - "Jellyfin.Plugin.AutoSubSync.dll"
 changelog: |
-  - When the audio check cannot decide, voice detection now reads the same audio and settles some
-  - The audio check is stricter about what counts as in sync, so fewer bad results are written
-  - Verdicts recorded by earlier versions are re-judged; run a full library sync after updating
-  - A refused rescale now says whether the title was simply too short to measure drift
-  - The sync engine is rebuilt, so it downloads once more after this update
+  - A subtitle the plugin already synced now stays in the synced count instead of drifting to skipped
+  - Stored results are re-judged once more; run a full library sync after updating to settle the counts
+  - Voice detection now reads drift on titles the audio check found in sync but too short to measure
+  - A subtitle removed as a duplicate no longer returns when only stale metadata still offers it
+  - The status panel names the bundled sync engine's own version
+  - Now licensed under the GNU Affero General Public License v3.0
