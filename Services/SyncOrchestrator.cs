@@ -1136,9 +1136,9 @@ public class SyncOrchestrator
            && record.SkippedMovementMs is { } moved
            && moved >= MinimumMovementMs;
 
-    // ! The file on disk is this row's own placement. Provenance defaults to Retimed, so a
-    //   backup or an explicit Created is the only proof the plugin wrote it.
-    private static bool StillOurOutput(SyncRecord record, SubtitleTarget target, string? subtitlePath)
+    // ! This row placed a file for the target, and the target is unchanged. Provenance defaults
+    //   to Retimed, so only a backup or an explicit Created is positive evidence.
+    internal static bool StillOurOutput(SyncRecord record, SubtitleTarget target, string? subtitlePath)
         => (record.BackupPath is not null || record.Provenance == SubtitleProvenance.Created)
            && FingerprintMatches(record, target, subtitlePath);
 
