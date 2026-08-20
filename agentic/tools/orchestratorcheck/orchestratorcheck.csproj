@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>OrchestratorCheck</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>orchestratorcheck</AssemblyName>
+    <NoWarn>$(NoWarn);CA1050;CA1707;SA0001</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Jellyfin.Controller" Version="10.11.11" />
+  </ItemGroup>
+
+  <!-- The whole plugin, linked. The gate methods are internal, and a copy would drift. -->
+  <ItemGroup>
+    <Compile Include="..\..\..\**\*.cs"
+             Exclude="..\..\..\bin\**\*.cs;..\..\..\obj\**\*.cs;..\..\..\agentic\**\*.cs" />
+  </ItemGroup>
+
+</Project>

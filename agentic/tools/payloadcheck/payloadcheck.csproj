@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>PayloadCheck</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>payloadcheck</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Jellyfin.Controller" Version="10.11.11" />
+  </ItemGroup>
+
+  <!-- The real sources, linked so the harness exercises shipping code and not a copy. -->
+  <ItemGroup>
+    <Compile Include="..\..\..\PluginPaths.cs" Link="PluginPaths.cs" />
+    <Compile Include="..\..\..\Cli\PayloadManifest.g.cs" Link="PayloadManifest.g.cs" />
+    <Compile Include="..\..\..\Cli\PayloadStore.cs" Link="PayloadStore.cs" />
+    <Compile Include="..\..\..\Cli\PayloadFetcher.cs" Link="PayloadFetcher.cs" />
+    <Compile Include="..\..\..\Cli\PlatformRid.cs" Link="PlatformRid.cs" />
+  </ItemGroup>
+
+</Project>

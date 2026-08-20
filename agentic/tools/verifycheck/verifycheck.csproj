@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>VerifyCheck</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>verifycheck</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Jellyfin.Controller" Version="10.11.11" />
+  </ItemGroup>
+
+  <!-- The real sources, linked so the harness exercises shipping code and not a copy. -->
+  <ItemGroup>
+    <Compile Include="..\..\..\Configuration\PluginConfiguration.cs" Link="PluginConfiguration.cs" />
+    <Compile Include="..\..\..\Plugin.cs" Link="Plugin.cs" />
+    <Compile Include="..\..\..\Subtitles\FfmpegProcess.cs" Link="FfmpegProcess.cs" />
+    <Compile Include="..\..\..\Subtitles\SubtitleOffsetProbe.cs" Link="SubtitleOffsetProbe.cs" />
+    <Compile Include="..\..\..\Services\SyncVerifier.cs" Link="SyncVerifier.cs" />
+    <Compile Include="..\..\..\Services\ISpeechOnsetSource.cs" Link="ISpeechOnsetSource.cs" />
+  </ItemGroup>
+
+  <!-- The fallback's own seam: argv into the payload, JSON back out of it. -->
+  <ItemGroup>
+    <Compile Include="..\..\..\Models\AssyResult.cs" Link="AssyResult.cs" />
+    <Compile Include="..\..\..\Cli\SyncEngine.cs" Link="SyncEngine.cs" />
+    <Compile Include="..\..\..\Cli\EngineAlignment.cs" Link="EngineAlignment.cs" />
+    <Compile Include="..\..\..\Cli\IAssyCliRunner.cs" Link="IAssyCliRunner.cs" />
+    <Compile Include="..\..\..\Cli\AssyArgumentBuilder.cs" Link="AssyArgumentBuilder.cs" />
+    <Compile Include="..\..\..\Cli\AssyVadOnsets.cs" Link="AssyVadOnsets.cs" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PluginConfiguration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <DryRunMode>true</DryRunMode>
+  <AssyConfigFilePath />
+  <SyncToolChain>
+    <string>ffsubsync</string>
+    <string>alass</string>
+    <string>autosubsync</string>
+  </SyncToolChain>
+  <EnabledLibraryIds />
+  <LanguageAllowList>
+    <string>en</string>
+  </LanguageAllowList>
+  <ProcessExternalSubtitles>true</ProcessExternalSubtitles>
+  <ProcessEmbeddedSubtitles>false</ProcessEmbeddedSubtitles>
+  <SkipEmbeddedWhenExternalExists>false</SkipEmbeddedWhenExternalExists>
+  <ConvertImageSubtitles>true</ConvertImageSubtitles>
+  <RemoveHearingImpairedTags>true</RemoveHearingImpairedTags>
+  <DeduplicateSubtitles>true</DeduplicateSubtitles>
+  <ExternalWriteMode>Overwrite</ExternalWriteMode>
+  <OutputEncoding>same_as_input</OutputEncoding>
+  <MarkerSuffix>autosubsync</MarkerSuffix>
+  <MinimumOffsetMs>50</MinimumOffsetMs>
+  <MaxConcurrentSyncs>0</MaxConcurrentSyncs>
+  <PerSyncTimeoutMinutes>20</PerSyncTimeoutMinutes>
+  <AutoSyncOnItemAdded>true</AutoSyncOnItemAdded>
+  <RefreshItemAfterSync>true</RefreshItemAfterSync>
+</PluginConfiguration>

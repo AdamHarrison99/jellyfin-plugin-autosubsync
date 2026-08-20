@@ -109,4 +109,6 @@ This plugin decides what to sync, when, and where the result goes.
 
 ---
 
-*This project was built utilizing AI code development tools ([Claude Code](https://www.anthropic.com/claude-cod
+*This project was built utilizing AI code development tools ([Claude Code](https://www.anthropic.com/claude-code)).*
+
+*The `agentic/` folder holds the design document, architecture notes, audit history and test harnesses used to build and verify the plugin; nothing in it ships in the plugin itself.*

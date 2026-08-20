@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>DedupeCheck</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>dedupecheck</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Jellyfin.Controller" Version="10.11.11" />
+  </ItemGroup>
+
+  <!-- The real sources, linked so the harness exercises shipping code and not a copy. -->
+  <ItemGroup>
+    <Compile Include="..\..\..\Models\*.cs" LinkBase="Models" />
+    <Compile Include="..\..\..\PluginPaths.cs" Link="PluginPaths.cs" />
+    <Compile Include="..\..\..\Configuration\PluginConfiguration.cs" Link="PluginConfiguration.cs" />
+    <Compile Include="..\..\..\Subtitles\SubtitleContent.cs" Link="SubtitleContent.cs" />
+    <Compile Include="..\..\..\Subtitles\SubtitleSimilarity.cs" Link="SubtitleSimilarity.cs" />
+    <Compile Include="..\..\..\Subtitles\SubtitleSlot.cs" Link="SubtitleSlot.cs" />
+    <Compile Include="..\..\..\Subtitles\LanguageCodes.cs" Link="LanguageCodes.cs" />
+    <Compile Include="..\..\..\Subtitles\SubtitleNaming.cs" Link="SubtitleNaming.cs" />
+    <Compile Include="..\..\..\Data\BackupVault.cs" Link="BackupVault.cs" />
+    <Compile Include="..\..\..\Data\SyncStore.cs" Link="SyncStore.cs" />
+    <Compile Include="..\..\..\Services\SubtitleDeduplicator.cs" Link="SubtitleDeduplicator.cs" />
+  </ItemGroup>
+
+</Project>

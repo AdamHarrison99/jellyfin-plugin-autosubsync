@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>RollbackCheck</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>rollbackcheck</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Jellyfin.Controller" Version="10.11.11" />
+  </ItemGroup>
+
+  <!-- The real sources, linked so the harness exercises shipping code and not a copy. -->
+  <ItemGroup>
+    <Compile Include="..\..\..\Models\*.cs" LinkBase="Models" />
+    <Compile Include="..\..\..\PluginPaths.cs" Link="PluginPaths.cs" />
+    <Compile Include="..\..\..\Configuration\PluginConfiguration.cs" Link="PluginConfiguration.cs" />
+    <Compile Include="..\..\..\Subtitles\SubtitleNaming.cs" Link="SubtitleNaming.cs" />
+    <Compile Include="..\..\..\Subtitles\LanguageCodes.cs" Link="LanguageCodes.cs" />
+    <Compile Include="..\..\..\Data\BackupVault.cs" Link="BackupVault.cs" />
+    <Compile Include="..\..\..\Data\SyncStore.cs" Link="SyncStore.cs" />
+    <Compile Include="..\..\..\Services\RollbackService.cs" Link="RollbackService.cs" />
+  </ItemGroup>
+
+</Project>

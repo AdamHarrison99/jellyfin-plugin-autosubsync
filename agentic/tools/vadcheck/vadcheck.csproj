@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>VadCheck</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>vadcheck</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Jellyfin.Controller" Version="10.11.11" />
+  </ItemGroup>
+
+  <!-- The real sources, linked so the harness scores through shipping gates and not a copy. -->
+  <ItemGroup>
+    <Compile Include="..\..\..\Configuration\PluginConfiguration.cs" Link="PluginConfiguration.cs" />
+    <Compile Include="..\..\..\Plugin.cs" Link="Plugin.cs" />
+    <Compile Include="..\..\..\Subtitles\FfmpegProcess.cs" Link="FfmpegProcess.cs" />
+    <Compile Include="..\..\..\Subtitles\SubtitleOffsetProbe.cs" Link="SubtitleOffsetProbe.cs" />
+    <Compile Include="..\..\..\Services\SyncVerifier.cs" Link="SyncVerifier.cs" />
+    <Compile Include="..\..\..\Services\ISpeechOnsetSource.cs" Link="ISpeechOnsetSource.cs" />
+  </ItemGroup>
+
+</Project>

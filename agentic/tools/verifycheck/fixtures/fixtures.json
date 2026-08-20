@@ -1,0 +1,47 @@
+﻿[
+    {
+        "Id": "madmen-s02e06",
+        "Name": "Mad Men S02E06 — unmeasurable, mean -26dB",
+        "SubtitleSha256": "96cfbd46a944b76ea908ce5bc49c013c22b19aa2abba3a8d526a902b4293e7a8",
+        "VideoBytes": 1156606392,
+        "VideoHead": "cf40a18bbca77828db614eb5ef0c74fe8eb3f41753c85b767d0bd63598a77fe3",
+        "RecordedUtc": "2026-08-16T03:43:16.6692750Z",
+        "VaultFile": "madmen-s02e06.srt"
+    },
+    {
+        "Id": "mpfc-s01e02",
+        "Name": "MPFC S01E02 — unmeasurable, continuous score",
+        "SubtitleSha256": "d699c6689f96b27691c0366d036e302701e26999da9cc638770cdebc726e86e9",
+        "VideoBytes": 230893947,
+        "VideoHead": "9fcf08b6476c278b64046188976b56437caf35b6a96f8c7cf3775cdd88c320b9",
+        "RecordedUtc": "2026-08-16T03:43:16.9454743Z",
+        "VaultFile": "mpfc-s01e02.srt"
+    },
+    {
+        "Id": "simpsons-s01e10",
+        "Name": "The Simpsons S01E10 — unmeasurable, laugh bed",
+        "SubtitleSha256": "866126b6c36d499db098dd46965b2cdbc6eccc76f177d3d7888d6193da683105",
+        "VideoBytes": 425167817,
+        "VideoHead": "e91612d644d32e9b8783af10093964c5c816e6b2572e7317867249b472df0ff6",
+        "RecordedUtc": "2026-08-16T03:43:17.2817971Z",
+        "VaultFile": "simpsons-s01e10.srt"
+    },
+    {
+        "Id": "tng-s02e02",
+        "Name": "TNG S02E02 — control, measurable, genuinely 1400ms off",
+        "SubtitleSha256": "a2b08612f32ec446ae8171b0fc11d14b97bc4d2a149e75b22827b6c72effc312",
+        "VideoBytes": 558570377,
+        "VideoHead": "b76420f6b7d34de96a33f9a3e311e7fee59c9dcc72f422f20e585a266c2a6d24",
+        "RecordedUtc": "2026-08-16T03:43:17.7728576Z",
+        "VaultFile": "tng-s02e02.srt"
+    },
+    {
+        "Id": "twinpeaks-fwwm",
+        "Name": "Twin Peaks FWWM — control, the strongest title available",
+        "SubtitleSha256": "9c92ddf20cdc1536be258540d4adde6c3acce85b6447a3684d8a1b11169ede5c",
+        "VideoBytes": 5626020887,
+        "VideoHead": "c73121949331e0c96c705e6ecaa97b0c30b98898b9d9aae76336e7a9ab8e4b08",
+        "RecordedUtc": "2026-08-16T03:43:18.5020869Z",
+        "VaultFile": "twinpeaks-fwwm.srt"
+    }
+]

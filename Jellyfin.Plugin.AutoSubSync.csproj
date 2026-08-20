@@ -9,6 +9,13 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
+  <!-- agentic/ is documentation and test harnesses, not plugin source. -->
+  <ItemGroup>
+    <Compile Remove="agentic\**" />
+    <EmbeddedResource Remove="agentic\**" />
+    <None Remove="agentic\**" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Jellyfin.Controller" Version="10.11.0" />
     <PackageReference Include="Jellyfin.Model" Version="10.11.0" />

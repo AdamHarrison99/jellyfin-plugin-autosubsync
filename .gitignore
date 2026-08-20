@@ -4,3 +4,16 @@ obj/
 *.suo
 .vs/
 *.DotSettings.user
+
+# agentic/ carries the docs, memory and harnesses. Its large vendored and built
+# artefacts are reproducible and stay out of git.
+agentic/payload/
+agentic/dist/
+agentic/tools/ffmpeg/
+__pycache__/
+
+# Machine-local media paths for the calibrate harness.
+agentic/tools/verifycheck/calibrate.local.json
+
+# Harness fixtures are third-party subtitle text. Drop local copies in to run those cases.
+agentic/tools/*/fixtures/*.srt

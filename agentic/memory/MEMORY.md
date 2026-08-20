@@ -1,0 +1,13 @@
+- [Tooling lives in agentic/tools](tooling-lives-in-agentic-tools.md) — reusable scripts get committed, not left in the scratchpad
+- [No changelog, no doc comments](no-changelog-no-doc-comments.md) — four hard rules: no changelog file, no docs in comments, no agentic/ refs in published code, no committing or releasing unasked
+- [Never commit yourself](never-commit-yourself.md) — the maintainer authors every commit; approving a plan that mentions committing is not permission to run it
+- [Short bulleted commit messages](short-bulleted-commit-messages.md) — subject line plus terse bullets, no rationale paragraphs
+- [Release notes are bullets only](release-notes-are-bullets-only.md) — no requirements or install steps in a release body; those live in README.md
+- [Track multi-task requests as a todo list](track-multi-task-requests-as-a-todo-list.md) — visible checklist, re-posted every time an item completes, audit then verify last
+- [README is a starter overview](readme-is-a-starter-overview.md) — not documentation; one short line per setting, the config page carries the detail
+- [Run verify only before commits](run-verify-only-before-commits.md) — not after every edit; use dotnet build or the one relevant harness
+- [Report status as a Done / Not done table](report-status-as-done-not-done-table.md) — never prose; outstanding and blocked items always listed
+- [Read the docs before concluding](read-the-docs-before-concluding.md) — a documented decision the code now contradicts is the finding
+- [Ask before changing the UI](ask-before-changing-the-ui.md) — approving a finding is not approving a config-page change as its fix
+- [Ask questions as simple options](ask-questions-as-simple-options.md) — plain language, options picker, recommended one first; never prose at the end of a report
+- [Verify a change on a wide population](verify-a-change-on-a-wide-population.md) — before and after, far more titles than the plan names; the fixed five are the control, not the population

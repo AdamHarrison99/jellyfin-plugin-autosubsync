@@ -1,0 +1,127 @@
+{
+  "_readme": "Single source of truth for every vendored tool. Written by agentic/tools/build-assy.ps1 and agentic/tools/pin-seconv.ps1, verified by agentic/tools/check-payload.ps1, and compiled into the plugin as Cli/PayloadManifest.g.cs. Do not hand-edit the 'resolved', 'payloads' or 'assets' sections - they record what was actually built or measured.",
+  "tools": {
+    "assy-cli": {
+      "role": "Subtitle alignment.",
+      "acquisition": "built",
+      "binaryName": "assy-cli",
+      "upstream": {
+        "repo": "https://github.com/denizsafak/AutoSubSync",
+        "tag": "v6.4",
+        "entryPoint": "main/cli.py",
+        "version": "6.4"
+      },
+      "version": "2.0",
+      "release": {
+        "assetRepo": "AdamHarrison99/jellyfin-plugin-autosubsync",
+        "assetTag": "payload-v{version}",
+        "assetName": "assy-cli-{upstream}-{rid}.zip"
+      },
+      "expectedEngines": [
+        "ffsubsync"
+      ],
+      "requiredRids": [
+        "win-x64",
+        "linux-x64"
+      ],
+      "optionalRids": [
+        "linux-arm64",
+        "osx-arm64"
+      ],
+      "resolved": {
+        "engines": {
+          "ffsubsync": "0.5.1"
+        },
+        "numpy": "2.5.2",
+        "scipy": "absent"
+      },
+      "payloads": {
+        "win-x64": {
+          "tag": "v6.4",
+          "commit": "267d90555a340322271c04ba9f44cd97a737576a",
+          "sha256": "6b34c32cc1f416a0ae56c04ce2c5d46b1163e211d46e25ab66472e29879b4c14",
+          "fileCount": 230,
+          "sizeMb": 95.2,
+          "archiveName": "assy-cli-6.4-win-x64.zip",
+          "archiveSha256": "6c03fa12496ce404410a92572d72d17bc40f33567fd69c34ec54dfa70cbac243",
+          "archiveSize": 42255273,
+          "builtUtc": "08/18/2026 22:31:43",
+          "builtOn": "Microsoft Windows NT 10.0.26200.0",
+          "python": "3.13.14",
+          "pyinstaller": "6.22.2"
+        },
+        "linux-x64": {
+          "tag": "v6.4",
+          "commit": "267d90555a340322271c04ba9f44cd97a737576a",
+          "sha256": "384fb68b7b37a5f42ae28008767869213abc1adb227c33a4cf9b920be2f9265a",
+          "fileCount": 220,
+          "sizeMb": 236.6,
+          "archiveName": "assy-cli-6.4-linux-x64.zip",
+          "archiveSha256": "aa8c2d058d567562fe9c2ae398e389f87e36d11b5583828753639945e19a3a39",
+          "archiveSize": 94422189,
+          "builtUtc": "2026-08-18T22:38:30Z",
+          "builtOn": "Unix 6.18.33.2",
+          "python": "3.13.15",
+          "pyinstaller": "6.22.2"
+        }
+      },
+      "buildPython": "3.13"
+    },
+    "seconv": {
+      "role": "Subtitle OCR and hearing-impaired text removal.",
+      "acquisition": "pinned",
+      "binaryName": "seconv",
+      "upstream": {
+        "repo": "https://github.com/SubtitleEdit/subtitleedit",
+        "tag": "v5.1.0"
+      },
+      "version": "5.1.0",
+      "release": {
+        "assetRepo": "SubtitleEdit/subtitleedit",
+        "assetTag": "{tag}"
+      },
+      "assetNames": {
+        "win-x64": "SeConv-Windows-x64.zip",
+        "linux-x64": "SeConv-Linux-x64.tar.gz",
+        "linux-arm64": "SeConv-Linux-ARM64.tar.gz",
+        "osx-arm64": "SeConv-macOS-ARM64.zip"
+      },
+      "requiredRids": [
+        "win-x64",
+        "linux-x64"
+      ],
+      "optionalRids": [
+        "linux-arm64",
+        "osx-arm64"
+      ],
+      "assets": {
+        "win-x64": {
+          "name": "SeConv-Windows-x64.zip",
+          "sha256": "ce081a6c6844d44cb1373ee501a963c9e37c788bf757c2fa0b39821ef9969839",
+          "size": 42300410,
+          "format": "zip"
+        },
+        "linux-x64": {
+          "name": "SeConv-Linux-x64.tar.gz",
+          "sha256": "3354dfeb4452b0dd8a11d8f3066c31a3116e2cbc137f271ac6b7e4f91896ba11",
+          "size": 41021313,
+          "format": "tar.gz"
+        },
+        "linux-arm64": {
+          "name": "SeConv-Linux-ARM64.tar.gz",
+          "sha256": "ab58891abd54a1604fdf5956c340159bd2efbcaef8cf2c69d97fcc55b83b4718",
+          "size": 38962486,
+          "format": "tar.gz"
+        },
+        "osx-arm64": {
+          "name": "SeConv-macOS-ARM64.zip",
+          "sha256": "d734ac8ca2d30ad2a09838bf0c1801ed83b0349385f782262102e5852d1dca21",
+          "size": 41767806,
+          "format": "zip"
+        }
+      },
+      "pinnedUtc": "08/12/2026 03:48:42",
+      "verifiedLocally": true
+    }
+  }
+}

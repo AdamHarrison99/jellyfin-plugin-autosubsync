@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>NamingCheck</RootNamespace>
+    <AssemblyName>namingcheck</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Jellyfin.Controller" Version="10.11.11" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\..\Models\*.cs" LinkBase="Models" />
+    <Compile Include="..\..\..\Configuration\PluginConfiguration.cs" Link="PluginConfiguration.cs" />
+    <Compile Include="..\..\..\Cli\SyncEngine.cs" Link="SyncEngine.cs" />
+    <Compile Include="..\..\..\Subtitles\ISubtitleExtractor.cs" Link="ISubtitleExtractor.cs" />
+    <Compile Include="..\..\..\Subtitles\LanguageCodes.cs" Link="LanguageCodes.cs" />
+    <Compile Include="..\..\..\Subtitles\SubtitleContent.cs" Link="SubtitleContent.cs" />
+    <Compile Include="..\..\..\Subtitles\SubtitleDiscoveryService.cs" Link="SubtitleDiscoveryService.cs" />
+    <Compile Include="..\..\..\Subtitles\SubtitleNaming.cs" Link="SubtitleNaming.cs" />
+    <Compile Include="..\..\..\Subtitles\SubtitleSlot.cs" Link="SubtitleSlot.cs" />
+    <Compile Include="..\..\..\Subtitles\VobSubIndex.cs" Link="VobSubIndex.cs" />
+  </ItemGroup>
+
+</Project>
