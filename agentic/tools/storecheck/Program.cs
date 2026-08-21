@@ -191,7 +191,9 @@ Check("every wording of the no-verdict refusal reaches the same card", () =>
                  SyncOutcome.NoVerdictExhausted("eng"),
                  SyncOutcome.NoVerdictExhausted(null),
                  "Rejected: the audio check reached no verdict on this title.",
-                 "Rejected: the audio check reached no verdict on this title — rejected as inconclusive."
+                 "Rejected: the audio check reached no verdict on this title — rejected as inconclusive.",
+                 "Rejected: the audio check reached no verdict on any subtitle offered for this language.",
+                 "Rejected: the audio check reached no verdict on any subtitle offered for this language: eng."
              })
     {
         var record = new SyncRecord

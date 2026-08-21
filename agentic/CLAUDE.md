@@ -259,13 +259,21 @@ Compress-Archive -Path "bin\Release\net9.0\Jellyfin.Plugin.AutoSubSync.dll" -Des
 
 **4.** MD5 **the zip**, ¬the DLL: `(Get-FileHash "bin\Release\autosubsync-v{VERSION}.zip" -Algorithm MD5).Hash.ToLower()`
 
-**5.** `manifest.json` — new entry at the **top** of `versions`: `version` (4-part) · `changelog` (short) · `targetAbi` = the **minimum** server version supported, ¬the one built against (Jellyfin hides the plugin below it) = `10.11.0.0` matching `build.yaml`, raised only when something genuinely needs a later 10.11.x · `sourceUrl` = `https://github.com/AdamHarrison99/jellyfin-plugin-autosubsync/releases/download/v{VERSION}/autosubsync-v{VERSION}.zip` · `checksum` = step 4 · `timestamp` = ISO 8601 **with time**, actual current UTC, ¬midnight.
+**5.** `manifest.json` — new entry at the **top** of `versions`: `version` (4-part) · `changelog` (bulleted, → *The changelogs are bulleted*) · `targetAbi` = the **minimum** server version supported, ¬the one built against (Jellyfin hides the plugin below it) = `10.11.0.0` matching `build.yaml`, raised only when something genuinely needs a later 10.11.x · `sourceUrl` = `https://github.com/AdamHarrison99/jellyfin-plugin-autosubsync/releases/download/v{VERSION}/autosubsync-v{VERSION}.zip` · `checksum` = step 4 · `timestamp` = ISO 8601 **with time**, actual current UTC, ¬midnight.
 
 **6.** Commit + push to `master` — the second of the two commits. `git show --stat` must list exactly three files.
 
 **7.** `gh release create v{VERSION} "bin\Release\autosubsync-v{VERSION}.zip" --title "v{VERSION}" --notes "changelog"`. Release notes = bullets only; requirements and install steps live in `README.md`.
 
 Pushing `manifest.json` to `master` is what triggers installs and updates — that file is what servers poll.
+
+### ! The changelogs are bulleted
+
+Three surfaces carry the same list — `build.yaml` (step 1), the `manifest.json` entry (step 5) and the release notes (step 7). Write it **once, as bullets**, and reuse it in all three. The manifest holds it as one JSON string → join the bullets with `\n`, each still opening with its `-` marker.
+
+- **One bullet per user-visible change**, a line or two each. Effect first: what an admin now sees, gets or no longer has to do.
+- ¬a class name, ¬a setting's property name, ¬a finding id, ¬the refactor behind it. That is the commit message's job, and the two audiences are ¬the same.
+- ! **¬a prose paragraph, in any of the three.** The manifest string is what the dashboard shows someone deciding whether to update → a wall of sentences is ¬read, and an update worth taking then looks like one worth postponing.
 
 ## Pre-release audit
 

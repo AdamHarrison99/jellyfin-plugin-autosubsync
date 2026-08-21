@@ -249,8 +249,7 @@ public class SubtitleAcquirer
         {
             return new AcquireOutcome(
                 AcquireResult.Exhausted,
-                "Failed: no subtitle offered for this language could be downloaded and confirmed "
-                + "against the audio.",
+                "Failed: no subtitle offered for this language could be downloaded.",
                 tally.Fetches,
                 null,
                 false);

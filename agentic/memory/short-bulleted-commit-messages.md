@@ -20,6 +20,11 @@ belong in a message — but only when they are in that commit. Run `git status` 
 and write bullets for the files it lists, nothing else. Repeated correction: writing bullets for
 work that is not in the diff has happened more than once.
 
+! **One message, always — never a set of them.** The working tree is one commit however many
+concerns it holds; splitting it into "commit 1 / commit 2" and asking which is wanted hands back a
+decision that was never asked for. Unrelated work in the same tree gets its own bullet, not its own
+message.
+
 ! **Read `git log` and `git diff` before writing one — never from memory of the session.** The
 maintainer asked for this on 2026-08-21 after a message that neither matched the log's voice
 (wrapping, the audit-findings bullet, the `Co-Authored-By:` trailer) nor was checked against the

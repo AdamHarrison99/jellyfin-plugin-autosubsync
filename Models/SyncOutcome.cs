@@ -14,7 +14,7 @@ public static class SyncOutcome
     // ! The same refusal reached after buying the whole list. Grouped with the single-candidate
     //   form, or the card empties the moment an item is offered more than one subtitle.
     public const string NoVerdictExhaustedPrefix =
-        "Rejected: the audio check reached no verdict on any subtitle offered for this language";
+        "Rejected: subtitles were downloaded for ";
 
     // ! Rows written before the current wording carry an older one. Reading the current string
     //   alone moves every one of them onto the card that did not cause them.
@@ -24,11 +24,16 @@ public static class SyncOutcome
         "Rejected: the audio check reached no verdict on this title — rejected as inconclusive."
     };
 
-    // The language is the one the offers were searched for; a target without one omits it.
+    // ! The wording before this one closed on the language, so equality reaches none of it.
+    private const string RetiredNoVerdictExhaustedPrefix =
+        "Rejected: the audio check reached no verdict on any subtitle offered for this language";
+
+    // The language is the one the offers were searched for; a target without one says so.
     public static string NoVerdictExhausted(string? language)
-        => string.IsNullOrWhiteSpace(language)
-            ? NoVerdictExhaustedPrefix + "."
-            : NoVerdictExhaustedPrefix + ": " + language.Trim() + ".";
+        => NoVerdictExhaustedPrefix
+           + (string.IsNullOrWhiteSpace(language) ? "this language" : language.Trim())
+           + ", but the audio check could not confirm any of them against this video, "
+           + "so none were kept.";
 
     // ! Not RejectedOffsetMs: a refusal that reached no verdict carries no offset.
     public static bool IsAudioRefusal(SyncRecord record)
@@ -41,6 +46,7 @@ public static class SyncOutcome
            && record.Message is { } message
            && (message == NoVerdictRefusal
                || message.StartsWith(NoVerdictExhaustedPrefix, StringComparison.Ordinal)
+               || message.StartsWith(RetiredNoVerdictExhaustedPrefix, StringComparison.Ordinal)
                || Array.IndexOf(LegacyNoVerdict, message) >= 0);
 
     // ! What the audio check refused, wherever the row ended up. A set-aside row still carries
