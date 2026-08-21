@@ -146,6 +146,10 @@
                 font-weight: 600;
             }
 
+            #AutoSubSyncConfigPage #downloadDependency:not(:empty) {
+                margin-bottom: 1em;
+            }
+
             #AutoSubSyncConfigPage .statGrid {
                 display: grid;
                 grid-template-columns: repeat(auto-fit, minmax(7em, 1fr));
@@ -452,11 +456,8 @@
                             <label class="inputLabel" for="txtMaxDownloads">Maximum downloads per item</label>
                             <input is="emby-input" type="number" id="txtMaxDownloads" min="0" max="50" />
                             <div class="fieldDescription">
-                                How many candidates one item may download and try before it gives up
-                                on that language. The budget spans every provider, so moving on to the
-                                next one does not reset it. <code>0</code> means unlimited, not
-                                disabled &mdash; with it, your provider account allowance is the only
-                                limit on what a single title can spend.
+                                <strong>0 = unlimited</strong>: How many candidates one item may download and try before it gives up
+                                on that language. The budget spans every provider.
                             </div>
                         </div>
 
@@ -706,11 +707,13 @@
                         + '</div>';
                 }
 
-                // ! The provider row belongs beside the toggle that needs it, not in the panel.
-                //   It is the answer to why nothing downloaded.
+                // ! The provider row sits beside the toggle that needs it, and only when it warns.
+                //   A working list is already named under the providers box.
                 function renderDependencies(page, dependencies) {
                     var all = dependencies || [];
-                    var provider = all.filter(function (d) { return d.Name === PROVIDER_ROW; });
+                    var provider = all.filter(function (d) {
+                        return d.Name === PROVIDER_ROW && !d.Ready;
+                    });
 
                     page.querySelector('#statusDependencies').innerHTML = all
                         .filter(function (d) { return d.Name !== PROVIDER_ROW; })
@@ -844,7 +847,7 @@
                     }).map(function (p) { return p.Name; });
 
                     if (order.length) {
-                        lines.push(hintLine('Asked in this order: ' + order.join(', then ') + '.', false));
+                        lines.push(hintLine('Current order: ' + order.join(', then ') + '.', false));
                     }
 
                     box.innerHTML = lines.join('');
