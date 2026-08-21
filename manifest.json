@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.6.3.0",
+        "changelog": "The result shown for an item is now final for that scan. Items no longer move between the status panel's groups while a scan is running, so a decision read halfway through is the one that stands. An item that reaches its per-item download limit is set aside rather than reported as a failure, and is picked up again once its limits are fresh. A new setting decides how long an item that came away with nothing is left alone before the providers are asked again, seven days by default and zero to wait not at all; the per-item download limit is counted over that same window instead of for ever, and a file an item has already downloaded is never downloaded twice. Retry failed subtitles also releases an item waiting out that window. A rejection the audio check reached no verdict on now names the language it searched, and a subtitle that could not be downloaded at all is worded apart from one the check refused, so the same sentence no longer appears under two headings. Status tiles no longer break their labels mid-word or run outside their box.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-autosubsync/releases/download/v1.6.3.0/autosubsync-v1.6.3.0.zip",
+        "checksum": "40333717fa52192293806c00e4d45a73",
+        "timestamp": "2026-08-21T23:13:30Z"
+      },
+      {
         "version": "1.6.2.0",
         "changelog": "A new setting decides what happens to a downloaded subtitle the audio check cannot measure. Left on it behaves as before, buying candidates until the check reaches a verdict or the download limit runs out. Turned off, the first candidate nothing rejects is saved, so a library the check struggles to measure can be covered at all; the sync engine's own alignment score still has to clear its floor, so a download nothing could confirm is refused either way. Subtitles refused because the check reached no verdict now appear on a card of their own instead of being counted among the ordinary rejections. A provider that bundles several subtitle sources behind one name, such as subbuzz, is no longer dropped entirely when one of those sources reports its allowance spent; only that source is set aside for the rest of the scan. The download row in the pipeline table now counts items rather than downloads, and a downloader that is installed but switched off for a library is reported instead of quietly vanishing from the provider order.",
         "targetAbi": "10.11.0.0",
