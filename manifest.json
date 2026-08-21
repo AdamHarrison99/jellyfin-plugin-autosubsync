@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.6.2.0",
+        "changelog": "A new setting decides what happens to a downloaded subtitle the audio check cannot measure. Left on it behaves as before, buying candidates until the check reaches a verdict or the download limit runs out. Turned off, the first candidate nothing rejects is saved, so a library the check struggles to measure can be covered at all; the sync engine's own alignment score still has to clear its floor, so a download nothing could confirm is refused either way. Subtitles refused because the check reached no verdict now appear on a card of their own instead of being counted among the ordinary rejections. A provider that bundles several subtitle sources behind one name, such as subbuzz, is no longer dropped entirely when one of those sources reports its allowance spent; only that source is set aside for the rest of the scan. The download row in the pipeline table now counts items rather than downloads, and a downloader that is installed but switched off for a library is reported instead of quietly vanishing from the provider order.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-autosubsync/releases/download/v1.6.2.0/autosubsync-v1.6.2.0.zip",
+        "checksum": "997894886d2575ef75d42b886ba17c7c",
+        "timestamp": "2026-08-21T19:39:05Z"
+      },
+      {
         "version": "1.6.1.0",
         "changelog": "Cuts what the download feature spends on subtitles it always discards. A candidate a provider names as hearing-impaired is now skipped before it costs a download, and a name saying the annotations have been removed is no longer mistaken for one. An item whose whole download budget went on hearing-impaired files it discarded is reported as a skip rather than as a failure of the audio check, which never saw them. Once an item has spent its download limit for a language it no longer buys a fresh budget on every scan; raising the limit is what lets it try again, and candidates already tried are still never bought twice. Hearing-impaired detection now logs how many cues were marked out of the total.",
         "targetAbi": "10.11.0.0",

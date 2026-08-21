@@ -1,6 +1,6 @@
 name: "AutoSubSync"
 guid: "6dbc32c5-1c68-481e-b066-9521552a2615"
-version: "1.6.1.0"
+version: "1.6.2.0"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 overview: "Automatically synchronizes external and embedded subtitles across your library, and can download one where a wanted language has none."
@@ -19,9 +19,13 @@ owner: "AdamHarrison99"
 artifacts:
   - "Jellyfin.Plugin.AutoSubSync.dll"
 changelog: |
-  - Skips a candidate a provider names as hearing-impaired before it costs a download
-  - An item whose whole download budget went on discarded hearing-impaired subtitles is
-    reported as a skip, not as a failure of the audio check
-  - An item that has spent its download limit no longer buys a fresh budget on every scan;
-    raising the limit is what lets it try again
-  - Hearing-impaired detection logs how many cues were marked out of the total
+  - A new setting decides what happens to a downloaded subtitle the audio check cannot
+    measure; left on it behaves as before, turned off the first candidate nothing rejects
+    is saved
+  - The sync engine's own alignment score still has to clear its floor, so a download
+    nothing could confirm is refused either way
+  - Subtitles refused because the check reached no verdict now have a card of their own
+  - A provider that bundles several sources behind one name, such as subbuzz, is no longer
+    dropped entirely when one of those sources reports its allowance spent
+  - The download row in the pipeline table counts items rather than downloads
+  - A downloader installed but switched off for a library is reported rather than missing
