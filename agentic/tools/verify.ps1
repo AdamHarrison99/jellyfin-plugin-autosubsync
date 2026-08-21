@@ -58,9 +58,9 @@ if (-not $SkipHarness) {
     # and are run by hand. These link the real sources, so a build failure here means a harness
     # stopped compiling against the code it is supposed to be guarding.
     $harnesses = @(
-        'configcheck', 'dedupecheck', 'gatecheck', 'langcheck', 'measurecheck', 'namingcheck',
-        'ocrcheck', 'orchestratorcheck', 'payloadcheck', 'placecheck', 'rollbackcheck',
-        'stalecheck', 'storecheck', 'subcheck', 'verifycheck', 'vobsubcheck'
+        'acquirecheck', 'configcheck', 'dedupecheck', 'gatecheck', 'langcheck', 'measurecheck',
+        'namingcheck', 'ocrcheck', 'orchestratorcheck', 'payloadcheck', 'placecheck',
+        'rollbackcheck', 'stalecheck', 'storecheck', 'subcheck', 'verifycheck', 'vobsubcheck'
     )
 
     foreach ($harness in $harnesses) {

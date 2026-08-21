@@ -1,4 +1,4 @@
-﻿using Jellyfin.Plugin.AutoSubSync.Cli;
+using Jellyfin.Plugin.AutoSubSync.Cli;
 using Jellyfin.Plugin.AutoSubSync.Data;
 using Jellyfin.Plugin.AutoSubSync.Services;
 using Jellyfin.Plugin.AutoSubSync.Subtitles;
@@ -22,6 +22,7 @@ public class FullLibrarySyncTask : IScheduledTask
     private readonly ILibraryManager _libraryManager;
     private readonly SyncCancellation _cancellation;
     private readonly VobSubStaging _vobSub;
+    private readonly ProviderRetirement _retirement;
     private readonly ILogger<FullLibrarySyncTask> _logger;
 
     public FullLibrarySyncTask(
@@ -37,6 +38,7 @@ public class FullLibrarySyncTask : IScheduledTask
         ILibraryManager libraryManager,
         SyncCancellation cancellation,
         VobSubStaging vobSub,
+        ProviderRetirement retirement,
         ILogger<FullLibrarySyncTask> logger)
     {
         _vobSub = vobSub;
@@ -51,6 +53,7 @@ public class FullLibrarySyncTask : IScheduledTask
         _runtime = runtime;
         _libraryManager = libraryManager;
         _cancellation = cancellation;
+        _retirement = retirement;
         _logger = logger;
     }
 
@@ -77,6 +80,9 @@ public class FullLibrarySyncTask : IScheduledTask
 
         // Staged VobSub payloads outlive the scan that made them.
         _vobSub.Sweep();
+
+        // ! A spent allowance resets on the provider clock, so every scan asks again.
+        _retirement.Reset();
 
         // ! Check readiness once. Per-item failures would be thousands of rows for one problem.
         var status = await _runtime.EnsureReadyAsync(cancellationToken).ConfigureAwait(false);

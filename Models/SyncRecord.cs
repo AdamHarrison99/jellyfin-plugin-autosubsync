@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -46,6 +46,10 @@ public class SyncRecord
     public List<SubtitleStage> Stages { get; set; } = new();
 
     public string? Message { get; set; }
+
+    // Every candidate this target fetched and judged, oldest first.
+    // ! Never pruned; a spent allowance does not stop having been spent.
+    public List<AcquireAttempt> AcquireAttempts { get; set; } = new();
 
     public int AttemptCount { get; set; }
 
@@ -95,11 +99,12 @@ public class SyncRecord
 
     public DateTime UpdatedUtc { get; set; }
 
-    // ! Every field except Stages must stay a value type or string; Stages is copied by hand.
+    // ! Every field except the two lists must stay a value type or string; both are copied by hand.
     public SyncRecord Clone()
     {
         var clone = (SyncRecord)MemberwiseClone();
         clone.Stages = Stages.Select(s => s.Clone()).ToList();
+        clone.AcquireAttempts = AcquireAttempts.Select(a => a.Clone()).ToList();
         return clone;
     }
 

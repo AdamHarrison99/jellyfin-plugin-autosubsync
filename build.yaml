@@ -3,15 +3,17 @@ guid: "6dbc32c5-1c68-481e-b066-9521552a2615"
 version: "1.5.1.0"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
-overview: "Automatically synchronizes external and embedded subtitles across your library."
+overview: "Automatically synchronizes external and embedded subtitles across your library, and can download one where a wanted language has none."
 description: |
   Finds out-of-sync subtitles across your movie and TV libraries and realigns them against
   the audio of the media they belong to, using a pinned build of the AutoSubSync CLI
   (assy-cli) that is downloaded once on first use and verified against a checksum built
   into the plugin. Handles both external subtitle files and embedded subtitle tracks, which
   are extracted, synchronized, and written back alongside the media. Original media files
-  are never modified. Includes dry run mode, per-library scoping, language filtering,
-  backups, and full rollback.
+  are never modified. Where a wanted language has no subtitle at all, it can download one
+  through the subtitle provider plugins you already have installed, and keeps it only when
+  the audio check confirms it against the video. Includes dry run mode, per-library scoping,
+  language filtering, backups, and full rollback.
 category: "General"
 owner: "AdamHarrison99"
 artifacts:

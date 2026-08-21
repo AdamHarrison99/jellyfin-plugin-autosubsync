@@ -124,7 +124,24 @@ function changedLines() {
       }
     }
   }
+
+  // ! A new file is in no diff, so it would go unlinted until the commit that adds it lands.
+  for (const path of untracked()) {
+    if (isScanned(path)) map.set(path, null);
+  }
+
   return map;
+}
+
+// Whole files, not lines: git reports an untracked path with no hunks to read.
+function untracked() {
+  try {
+    return execFileSync('git', ['ls-files', '--others', '--exclude-standard', '--', '.'], {
+      cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
+    }).split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  } catch {
+    return [];
+  }
 }
 
 // Comment lines only. Not a full parser; a "//" inside a string literal is a false positive.
@@ -332,7 +349,7 @@ function main() {
   const results = [];
   for (const file of files) {
     const only = onlyByFile
-      ? onlyByFile.get(relative(ROOT, file).split(sep).join('/'))
+      ? onlyByFile.get(relative(ROOT, file).split(sep).join('/')) ?? null
       : null;
     const r = check(file, only);
     if (r) results.push(r);

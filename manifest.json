@@ -2,8 +2,8 @@
   {
     "guid": "6dbc32c5-1c68-481e-b066-9521552a2615",
     "name": "AutoSubSync",
-    "description": "Automatically synchronizes external and embedded subtitles across your library, aligning each one against the audio of the media it belongs to. The sync engine is downloaded once on first use and verified against a checksum built into the plugin.",
-    "overview": "Automatically synchronizes external and embedded subtitles across your library.",
+    "description": "Automatically synchronizes external and embedded subtitles across your library, aligning each one against the audio of the media it belongs to. Where a wanted language has no subtitle at all, it can download one through the subtitle provider plugins you already have installed, and keeps it only when the audio check confirms it. The sync engine is downloaded once on first use and verified against a checksum built into the plugin.",
+    "overview": "Automatically synchronizes external and embedded subtitles across your library, and can download one where a wanted language has none.",
     "owner": "AdamHarrison99",
     "category": "General",
     "versions": [

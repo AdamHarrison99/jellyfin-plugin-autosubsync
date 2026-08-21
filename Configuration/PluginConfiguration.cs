@@ -58,6 +58,25 @@ public class PluginConfiguration : BasePluginConfiguration
     // Collapses same-language duplicates once every one of them has synced.
     public bool DeduplicateSubtitles { get; set; }
 
+    // ---- Download ----
+
+    // Fetches a subtitle for a wanted language the item has nothing in.
+    public bool AcquireMissingSubtitles { get; set; }
+
+    // ! Reachable only while AcquireMissingSubtitles is on.
+    public bool AcquireWhenEmbeddedExists { get; set; }
+
+    // On, a hearing-impaired candidate is acceptable; it is never preferred.
+    public bool AcquireHearingImpaired { get; set; }
+
+    // ! Zero means unlimited, never disabled. The master toggle is what disables the feature.
+    public int MaxDownloadsPerItem { get; set; } = DefaultMaxDownloadsPerItem;
+
+    public const int DefaultMaxDownloadsPerItem = 3;
+
+    // Provider names in the order they are asked, and the only way to name an unknown downloader.
+    public string[] AdditionalDownloadProviders { get; set; } = [];
+
     // ---- Output ----
 
     // Applies to external subtitles only; embedded tracks always become new sidecars.
@@ -131,12 +150,16 @@ public class PluginConfiguration : BasePluginConfiguration
         MaxConcurrentSyncs = Math.Clamp(MaxConcurrentSyncs, AutoConcurrency, MaxConcurrency);
         PerSyncTimeoutMinutes = Math.Clamp(PerSyncTimeoutMinutes, 1, 240);
 
+        // ! Floor of zero, which reads as unlimited.
+        MaxDownloadsPerItem = Math.Max(MaxDownloadsPerItem, 0);
+
         // ! Must never be empty.
         MarkerSuffix = SanitizeMarker(MarkerSuffix);
 
         // ! The API accepts a null for either of these; every use below assumes it is not.
         LanguageAllowList ??= [];
         EnabledLibraryIds ??= [];
+        AdditionalDownloadProviders ??= [];
 
         // ! Reaches the engine as --encoding. An unknown value fails every sync, and the failure
         //   names the engine, not this setting.
@@ -155,6 +178,13 @@ public class PluginConfiguration : BasePluginConfiguration
             .ToArray();
 
         EnabledLibraryIds = EnabledLibraryIds.Distinct().ToArray();
+
+        // ! Order is the search order. The first spelling of a name wins.
+        AdditionalDownloadProviders = AdditionalDownloadProviders
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .Select(p => p.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     private static string SanitizeMarker(string value)

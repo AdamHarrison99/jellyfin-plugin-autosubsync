@@ -61,4 +61,7 @@ public class SubtitleTarget
 
     public static string EmbeddedKey(int streamIndex, string? codec)
         => $"emb:{streamIndex}:{codec ?? "unknown"}";
+
+    // ! Language alone. One acquire row per language, whatever file answers it.
+    public static string AcquireKey(string language) => "acq:" + language;
 }

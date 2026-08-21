@@ -5,7 +5,7 @@
 > reflection, ¬from memory or from a Jellyfin source tree. *Decisions taken* is settled and is the
 > design; *Pre-implementation checks* are measurements that must happen before any code is written.
 > `AQ-P4` — the control that could have invalidated the whole feature — **has been run: 0 of 18
-> mismatched pairs were accepted.** ! `AQ-P6` was opened later and is **¬**answered. ! Read its two qualifications before relying on that number.
+> mismatched pairs were accepted.** ! `AQ-P6` has since been **answered and closed**. ! Read its two qualifications before relying on that number.
 >
 > ! This entry **reverses `RM-SCOPE`**, which is recorded in the design document as permanent. See
 > *The reversal* — opening this means amending the plan deliberately, ¬adding a phase beside a
@@ -43,7 +43,7 @@ than left as dead code. Two of that decision's four supports have moved:
 | `RM-SCOPE`'s argument | status now |
 |---|---|
 | *A bad provider match is worse than no subtitle, and nothing can tell them apart at write time* | **Moved.** The audio check answers exactly this question, against the video's own audio, independently of the engine — see *The thesis* |
-| *Two downloaders race to fill the same gap* | **Narrowed, ¬gone.** Jellyfin's own fetcher is now detectable in code (`AQ-F3`); Bazarr still is ¬, but the race's cost collapses (`AQ-F4`) |
+| *Two downloaders race to fill the same gap* | **Gone** (`AQ-P6`). Jellyfin has no fetcher of its own — it calls the same provider plugins — and the gap test closes the race w/out a refusal (`AQ-F4`) |
 | *A second credential store and a second rate limit to respect* | **Gone by construction.** The plugin holds no credential and speaks to no provider; it calls `ISubtitleManager` and inherits whatever the admin configured |
 | *It changes the plugin from "synchronize subtitles" to "obtain and manufacture subtitles", w/ a different support burden* | **Unchanged, and still true.** This is the part the user is deciding, ¬the part evidence can settle |
 
@@ -291,6 +291,13 @@ Per item in scope, per wanted language slot: **does any subtitle stream serve th
     too.** A viewer wanting full dialogue on such an item gets nothing, ∵ forced tracks carry signs
     and songs. This follows from the rule exactly as stated — if it ever warrants an exception,
     that is a **decision to reopen**, ¬a defect to quietly patch.
+  - ! **Second consequence, the same shape: a subtitle naming *no* language makes the whole item
+    ineligible.** This document does ¬cover the case and it is common — `Movie.srt` beside the video
+    carries no tag at all. An unlabelled track could be any language, so no language can be *proved*
+    empty → the item yields **no** acquire target, in any language, rather than a target per wanted
+    language. The alternative reading — treat unlabelled as serving nothing — points the feature at
+    every item w/ a bare `.srt`, which is a large share of a typical library, and buys a second copy
+    of a subtitle the user already has. Recorded here as a **decision**: reopen it, do ¬patch it.
 - A gap is a wanted slot w/ nothing in it → one acquire target, ranked **last** so every cheap text
   sync in the library finishes before the first network call is made.
 - Costs **zero** extra I/O: `IMediaSourceManager.GetMediaStreams(item.Id)` is already called once per
@@ -315,11 +322,10 @@ Per item in scope, per wanted language slot: **does any subtitle stream serve th
   - → the *only* visible effect is the provider dependency row on the config page. Nothing is
     queued, nothing is counted, nothing is marked failed.
   - ! **The parallel `AQ-F3` rule — refusing to acquire in a library w/ `SubtitleDownloadLanguages`
-    set — is `AQ-P6`, ¬settled design.** What `AQ-F3` actually verified is that the **field exists**
-    on `LibraryOptions`. That the server *acts* on it during a refresh was **inferred from the
-    field's name and purpose and has ¬been measured.** The user doubts it. → build no refusal on it
-    until `AQ-P6` answers; until then the preflight gates on the **known-downloader count**
-    (`AQ-Q9`) and on nothing else.
+    set — was `AQ-P6` and is now **deleted**, ¬deferred.** Jellyfin downloads nothing itself; it
+    calls the same provider plugins this feature calls, so that field can only ever aim the same
+    downloaders at the same gap. → the preflight gates on the **known-downloader count** (`AQ-Q9`)
+    and on nothing else, permanently. ! **Nothing in the shipped code reads `LibraryOptions`.**
 
 ### Wanted languages
 
@@ -427,10 +433,18 @@ wrong is how a downloaded subtitle silently vanishes:
 | branch | existing target | acquire target |
 |---|---|---|
 | pre-sync check says `Aligned` | leave the file alone → `Skipped` / `Synced` | the download is already correctly timed → **keep it, no engine run** |
-| engine moved < `MinimumMovementMs` | discard the output, the original stands | there **is** no original → **keep the download as fetched** |
+| engine moved < `MinimumMovementMs` | discard the output, the original stands | there **is** no original → **no minimum-movement exit at all** |
 
 → *"the engine found nothing to move"* means *"this file was already right"*, which for a download is
 success, ¬a no-op. Both branches currently `TryDelete` the produced file and return.
+
+! **The second row was written as *keep the download as fetched* and is ¬built that way.** Keeping
+an output the check has ¬confirmed would write an unverified subtitle into the library on the one
+path where no original exists to fall back to — the governing rule forbids exactly that. → the
+acquire path has **no minimum-movement branch**: a download the engine barely touched goes to the
+audio check like every other candidate and is kept or refused on the verdict alone. This is strictly
+safer than the row it replaces, costs one check the sync path also pays, and never silently loses a
+file — the branch it removes could only ever have *kept* something unconfirmed.
 
 **Where the loop lives is the largest implementation risk in this document.** `RunPipelineAsync` is
 ~470 lines carrying every gate the check owns — the stretch guard, the `Inconclusive` branch, the
@@ -690,9 +704,8 @@ elements. `AQ-Q5`, **decided: both approved**, alongside the card:
   does when OCR is on;
 - a **provider dependency row**, rendered by the same `Dependency(...)` helper as Tesseract, w/ the
   **four** states under *Provider row states*. ! An earlier draft gave its second state as *this
-  library downloads its own subtitles* (`AQ-F3`) — that claim is **unverified and is now `AQ-P6`**,
-  and the state was replaced by *providers installed, none of them a downloader* (`AQ-F6`), which is
-  measured.
+  library downloads its own subtitles* (`AQ-F3`) — that claim was **wrong** (`AQ-P6`), and the state
+  was replaced by *providers installed, none of them a downloader* (`AQ-F6`), which is measured.
 
 ### Settings
 
@@ -918,9 +931,11 @@ three candidates pays that three times.
 
 | `AQ-Q7` | **Add `AcquireHearingImpaired`**, default **off** — off, only the plain language track is acquired, refused pre-fetch on the provider flag **and** post-fetch on the bytes via the existing `SdhDetector`; on, SDH is **acceptable but ¬preferred**, the list is ¬re-ranked, and the first candidate that syncs and verifies wins | user decision. ! The *on* branch adds no ranking rule of its own — it only stops filtering, so an SDH file can win over a plain one further down the list. ! ¬wired to `RemoveHearingImpairedTags` — they answer different questions, and inferring one from the other would override an explicit setting |
 
-| `AQ-Q8` | **Fall through to the next provider** when the current provider's candidates are exhausted and per-item budget remains — implemented as **one search per provider**, in the admin's order, w/ `DisabledSubtitleFetchers` excluding the others | user decision. ! `SearchAllProviders = false` alone consults **only the first provider that answers**, so w/out this a second provider is dead weight. Searching lazily (¬`SearchAllProviders = true`) keeps the common case — first provider succeeds — at exactly one search, and spends extra calls only on items that need them. ! `Inconclusive` still stops everything (`AQ-R4`); fall-through is for `Misaligned` and exhaustion |
+| `AQ-Q8` | **Fall through to the next provider** when the current provider's candidates are exhausted and per-item budget remains — implemented as **one search per provider**, in the order `AQ-Q10` fixes, w/ `DisabledSubtitleFetchers` excluding the others | user decision. ! `SearchAllProviders = false` alone consults **only the first provider that answers**, so w/out this a second provider is dead weight. Searching lazily (¬`SearchAllProviders = true`) keeps the common case — first provider succeeds — at exactly one search, and spends extra calls only on items that need them. ! `Inconclusive` still stops everything (`AQ-R4`); fall-through is for `Misaligned` and exhaustion. ! **Amended by `AQ-Q10`:** *the admin's order* is no longer the whole rule — anything named in *Additional download providers* is asked first, in the order it was typed |
 
-| `AQ-Q9` | **Whitelist downloader providers by name.** A shipped list of known downloaders; the preflight gates on *≥ 1 known downloader*, ¬*≥ 1 provider*; matching is exact + case-insensitive on the trimmed `Name` | user decision, taken after the brittleness objection was raised and overruled. ! The whitelist **must be admin-extensible** — a shipped-only list means a newly released or renamed downloader is dead until this plugin ships again, which is the objection's real teeth. → *Additional download providers*, a comma-separated field in the `Download` section, merged w/ the shipped list. ! The plugin still ¬needs to know a provider is *good*, only that it is a *downloader*. ! Entries are quoted **from each plugin's source**, ¬its listing name — the official plugin reports `Open Subtitles` w/ a space, and the spaceless guess matches nothing |
+| `AQ-Q9` | **Whitelist downloader providers by name.** A shipped list of known downloaders; the preflight gates on *≥ 1 known downloader*, ¬*≥ 1 provider*; matching is exact + case-insensitive on the trimmed `Name` | user decision, taken after the brittleness objection was raised and overruled. ! The whitelist **must be admin-extensible** — a shipped-only list means a newly released or renamed downloader is dead until this plugin ships again, which is the objection's real teeth. → *Additional download providers*, a comma-separated field in the `Download` section, merged w/ the shipped list. ! The plugin still ¬needs to know a provider is *good*, only that it is a *downloader*. ! Entries are quoted **from each plugin's source**, ¬its listing name — the official plugin reports `Open Subtitles` w/ a space, and the spaceless guess matches nothing. ! **Amended by `AQ-Q10`:** the same field is also the priority chain, so listing an already-whitelisted name is meaningful rather than redundant |
+
+| `AQ-Q10` | **`Additional download providers` does two jobs, and the UI says so.** It extends the whitelist (`AQ-Q9`) **and** fixes the ask order (`AQ-Q8`): every name in it is asked first, in the order typed, then every other enabled downloader in the server's own order. A name that resolves to no installed provider is reported **in red under the field**; so is one that resolves but is disabled for the library | user decision. Listing `SubBuzz, Open Subtitles` where both are already whitelisted is ¬a no-op — it says *ask SubBuzz first*, which is the only way an admin can express a preference the server has no field for. ! Without the red line, a typo or a renamed plugin is **silent**: the name matches nothing, the order silently reverts, and the user sees a working page. ! The check runs **as the box is typed**, against a `GET AutoSubSync/Providers` list, ¬only on save. ! Provider names come from third-party plugins → the hint escapes them before rendering |
 
 **Total config-page delta: a new `Download` section w/ four controls and a provider dependency row;
 one new status card; one conditional stage row; one clause of dialog text.** ! Nothing else on that page changes without asking again.
@@ -1037,13 +1052,19 @@ changes are folded in, ¬appended.
   - Method: the pairs were driven through `check-stretch-outcome.ps1`, which already runs this shape
     end to end. ! The generator + tally are scratchpad-only and die there; the standing harness this
     feature owes is listed under *Harness debt*.
-- **`AQ-P6` — does Jellyfin actually download subtitles on its own?** ! Raised ∵ the user disputed
-  a claim this document made, and the claim turned out to rest on an **inference**. `AQ-F3` verified
-  that `LibraryOptions.SubtitleDownloadLanguages` **exists**; nothing verified that a metadata
-  refresh **acts** on it. Answer it by setting that field on a scratch library and watching whether
-  a sidecar appears w/out the plugin running. → **if it does ¬, delete the whole "refuse to race
-  Jellyfin" idea** from this document rather than shipping a refusal that protects against nothing.
-  ! Until answered, the preflight gates on **provider count alone** (*The gap test*).
+- **`AQ-P6` — ANSWERED: Jellyfin downloads nothing of its own.** ! Raised ∵ the user disputed a
+  claim this document made, and the claim turned out to rest on an **inference**. The answer is that
+  the server ships **no subtitle provider at all** — `ISubtitleManager` is a dispatcher over whatever
+  provider plugins the admin installed, and `SubtitleDownloadLanguages` can only aim those same
+  plugins at the same gap. → the *"refuse to race Jellyfin"* idea is **deleted**, ¬deferred: a
+  refusal built on it would protect against nothing and would disable the feature on exactly the
+  libraries an admin had configured for subtitles.
+  - ! **The empirical half — does a refresh act on that field — was never measured and is now
+    moot.** Whether it fires or not, both paths end at the same provider plugins, and the gap test
+    reads the resulting sidecar like any other. Do ¬reopen this as a measurement; reopen it only if
+    Jellyfin ever ships a downloader in core.
+  - ! What this does **¬** answer is the **Bazarr** race, which is a separate tool w/ its own
+    account. That stays where `AQ-F4` left it: narrowed by the nothing-at-all scope, ¬removed.
 - **`AQ-P5` — ANSWERED for OpenSubtitles; the guard stays anyway.** From the same source read.
   - `Format` is **hard-coded `"srt"`** on every search result, and the download ID is
     `srt-{language}-{fileId}[-sdh][-forced]`. → for this provider the *"a format the engine cannot
@@ -1103,7 +1124,8 @@ proving a record written before this version still loads.
 row, the empty-Languages pointer), the *downloaded* card, the conditional `Acquire` stage row, the
 clear-database clause, the rollback clause. **Nothing else on that page.**
 
-**H. Harness debt — ¬optional.**
+**H. Harness debt — ¬optional.** ! **Paid.** `acquirecheck` is the new harness; the rest are
+additions to harnesses that already existed, and the standing control is `verifycheck --mismatch`.
 - `orchestratorcheck` — the shared decision helper, both callers, and the two inverted branches.
 - `stalecheck` — an acquire record through its whole life: offered w/ no file, kept and placed, its
   output deleted by the user, the item leaving scope. ! The re-acquire loop in `AQ-F2` is exactly the
@@ -1145,6 +1167,13 @@ clear-database clause, the rollback clause. **Nothing else on that page.**
   changed thresholds, or a changed check. → a harness that builds the mismatched matrix from the
   local calibration set and tallies the verdicts. ! Its fixtures are library files → it reads them
   from the untracked local config like the other calibration tools, and **commits none of them**.
+  - → built as **`verifycheck --mismatch`**, ¬a new project: the calibration set, the vendored
+    ffmpeg and the linked `SyncVerifier` are all already there, and a second copy of that wiring is
+    a second thing to drift. It reads `calibrate.local.json`, pairs every video w/ every **other**
+    title's subtitle, prints the matrix, and **exits non-zero on a single `Aligned`**.
+  - ! **It is ¬in `verify.ps1`.** Five titles is twenty pairs of real audio reads over a network
+    library — it is a control a maintainer runs deliberately, on a change to the check, the engine
+    or a threshold. `--cases <path>` runs a subset.
 
 **I. Documentation** — `ARCHITECTURE.md` gains the acquire path and the gap test; `CLAUDE.md`'s
 dry-run and security invariants gain the network clause; `README.md` gains one line per setting.

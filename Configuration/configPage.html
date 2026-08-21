@@ -26,6 +26,10 @@
                 margin: 0.5em 0 1.25em 0;
             }
 
+            #AutoSubSyncConfigPage .providerProblem {
+                color: #d9534f;
+            }
+
             #AutoSubSyncConfigPage .dependentOff {
                 opacity: 0.45;
                 pointer-events: none;
@@ -419,6 +423,80 @@
                             Comma-separated language codes (<code>eng, spa</code> or <code>en, es</code>).
                             Two- and three-letter forms both work and can be mixed. Leave empty for
                             all languages. Subtitles with an unknown language are always processed.
+                            This list is also what <em>Download</em> below treats as the languages you
+                            want, first listed tried first, and an empty box downloads nothing.
+                        </div>
+                    </div>
+
+                    <br />
+                    <h2>Download</h2>
+
+                    <div id="downloadDependency"></div>
+
+                    <label class="checkboxContainer">
+                        <input is="emby-checkbox" type="checkbox" id="chkAcquire" />
+                        <span>Automatically download missing subtitles</span>
+                    </label>
+                    <div class="fieldDescription">
+                        For a language listed under <em>Languages</em> that an item has no subtitle in
+                        at all, a candidate is downloaded through your installed subtitle provider
+                        plugins, synchronized, and kept only if the audio check confirms it. Anything
+                        unconfirmed is discarded and never reaches the library.
+                        <strong>Leave <em>Languages</em> empty and nothing is ever downloaded</strong>
+                        &mdash; an empty box means every language, and there is no such thing as
+                        downloading every language.
+                    </div>
+
+                    <div id="acquireGroup">
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="txtMaxDownloads">Maximum downloads per item</label>
+                            <input is="emby-input" type="number" id="txtMaxDownloads" min="0" max="50" />
+                            <div class="fieldDescription">
+                                How many candidates one item may download and try before it gives up
+                                on that language. The budget spans every provider, so moving on to the
+                                next one does not reset it. <code>0</code> means unlimited, not
+                                disabled &mdash; with it, your provider account allowance is the only
+                                limit on what a single title can spend.
+                            </div>
+                        </div>
+
+                        <label class="checkboxContainer">
+                            <input is="emby-checkbox" type="checkbox" id="chkAcquireEmbedded" />
+                            <span>Download even when the video has an embedded track</span>
+                        </label>
+                        <div class="fieldDescription">
+                            Off, a language already carried inside the video file is not a gap and
+                            nothing is downloaded for it. Turn this on where embedded tracks are poor
+                            rips, mistimed, or hearing-impaired only. Most items without a sidecar do
+                            have an embedded track, so this points the feature at far more of your
+                            library.
+                        </div>
+
+                        <label class="checkboxContainer">
+                            <input is="emby-checkbox" type="checkbox" id="chkAcquireHi" />
+                            <span>Accept hearing-impaired subtitles</span>
+                        </label>
+                        <div class="fieldDescription">
+                            Off, only ordinary subtitles are downloaded, and a candidate that turns
+                            out to carry sound descriptions is discarded after it arrives. On,
+                            hearing-impaired files become acceptable but are never preferred. Turning
+                            this off while <em>Remove hearing-impaired tags</em> is on is a choice to
+                            have fewer subtitles: those files would have been cleaned up anyway.
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="txtDownloadProviders">Additional download providers</label>
+                            <input is="emby-input" type="text" id="txtDownloadProviders" />
+                            <div class="fieldDescription">
+                                Comma-separated provider names. This box does two jobs at once. It
+                                <strong>sets the order providers are asked in</strong> &mdash; anything
+                                you list is asked before everything you do not, in the order you wrote
+                                it. It is also the <strong>only way to tell this plugin that a provider
+                                it does not recognize can download subtitles</strong>, since nothing in
+                                Jellyfin identifies which providers do. Names must match the provider
+                                exactly, ignoring case and surrounding spaces.
+                            </div>
+                            <div id="providerHint" class="fieldDescription"></div>
                         </div>
                     </div>
 
@@ -606,6 +684,7 @@
                 }
 
                 var stageLabels = {
+                    Acquire: 'Subtitle download',
                     Convert: 'OCR (image to text)',
                     Sync: 'Synchronization',
                     Verify: 'Audio check',
@@ -627,10 +706,22 @@
                         + '</div>';
                 }
 
+                // ! The provider row belongs beside the toggle that needs it, not in the panel.
+                //   It is the answer to why nothing downloaded.
                 function renderDependencies(page, dependencies) {
-                    page.querySelector('#statusDependencies').innerHTML =
-                        (dependencies || []).map(dependencyRow).join('');
+                    var all = dependencies || [];
+                    var provider = all.filter(function (d) { return d.Name === PROVIDER_ROW; });
+
+                    page.querySelector('#statusDependencies').innerHTML = all
+                        .filter(function (d) { return d.Name !== PROVIDER_ROW; })
+                        .map(dependencyRow)
+                        .join('');
+
+                    page.querySelector('#downloadDependency').innerHTML =
+                        provider.map(dependencyRow).join('');
                 }
+
+                var PROVIDER_ROW = 'Subtitle providers';
 
                 // ! Tested on the magnitude. Signed, -1200 falls under the second threshold and
                 //   renders as milliseconds where +1200 renders as seconds.
@@ -646,6 +737,7 @@
                     page.querySelector('#statusCounts').innerHTML =
                         statCard(status.Total, 'tracks seen')
                         + statCard(status.Synced, 'synced')
+                        + statCard(status.Downloaded, 'downloaded')
                         + statCard(formatOffset(status.MedianAppliedOffsetMs), 'median shift')
                         + statCard(status.Skipped, 'already in sync')
                         + statCard(status.Rejected, 'rejected by audio checks', status.Rejected ? 'isRejected' : '')
@@ -687,6 +779,100 @@
 
                 function renderStages(page, stages) {
                     page.querySelector('#statusStages').innerHTML = (stages || []).map(stageRow).join('');
+                }
+
+                // ! Cached from the server. The box is judged as it is typed, before any save.
+                var installedProviders = null;
+                var shippedDownloaders = [];
+
+                function sameProvider(left, right) {
+                    return String(left).trim().toLowerCase() === String(right).trim().toLowerCase();
+                }
+
+                function findProvider(name) {
+                    return (installedProviders || []).filter(function (p) {
+                        return sameProvider(p.Name, name);
+                    })[0] || null;
+                }
+
+                function isShipped(name) {
+                    return shippedDownloaders.some(function (n) { return sameProvider(n, name); });
+                }
+
+                function hintLine(text, problem) {
+                    return '<div' + (problem ? ' class="providerProblem"' : '') + '>'
+                        + escapeHtml(text) + '</div>';
+                }
+
+                // ! Provider names come from third-party plugins and can carry markup.
+                function renderProviderHint(page) {
+                    var box = page.querySelector('#providerHint');
+                    var typed = splitList(page.querySelector('#txtDownloadProviders').value);
+
+                    if (installedProviders === null) {
+                        box.innerHTML = typed.length
+                            ? hintLine('The installed provider list could not be read, so these '
+                                + 'names cannot be checked.', false)
+                            : '';
+                        return;
+                    }
+
+                    var lines = typed.map(function (name) {
+                        var found = findProvider(name);
+
+                        if (!found) {
+                            return hintLine('Cannot find a subtitle provider named "' + name
+                                + '" installed on this server.', true);
+                        }
+
+                        if (!found.IsEnabled) {
+                            return hintLine(found.Name + ' is installed but disabled for this '
+                                + 'library, so it will not be asked.', true);
+                        }
+
+                        return hintLine(isShipped(found.Name)
+                            ? found.Name + ' is already a known downloader; listing it here only '
+                                + 'moves it up the order.'
+                            : found.Name + ' will be treated as a downloader and asked in this '
+                                + 'position.', false);
+                    });
+
+                    var order = (installedProviders || []).filter(function (p) {
+                        return p.IsEnabled && (p.IsDownloader || typed.some(function (n) {
+                            return sameProvider(n, p.Name);
+                        }));
+                    }).map(function (p) { return p.Name; });
+
+                    if (order.length) {
+                        lines.push(hintLine('Asked in this order: ' + order.join(', then ') + '.', false));
+                    }
+
+                    box.innerHTML = lines.join('');
+                }
+
+                function loadProviders(page) {
+                    return ApiClient.ajax({
+                        type: 'GET',
+                        url: ApiClient.getUrl('AutoSubSync/Providers'),
+                        dataType: 'json'
+                    }).then(function (result) {
+                        installedProviders = (result && result.Installed) || null;
+                        shippedDownloaders = (result && result.Shipped) || [];
+                        renderProviderHint(page);
+                    }, function () {
+                        installedProviders = null;
+                        renderProviderHint(page);
+                    });
+                }
+
+                // All four dependents go dead together; a live control under a dead toggle lies.
+                function updateAcquireState(page, enabled) {
+                    ['#txtMaxDownloads', '#chkAcquireEmbedded', '#chkAcquireHi', '#txtDownloadProviders']
+                        .forEach(function (selector) {
+                            page.querySelector(selector).disabled = !enabled;
+                        });
+
+                    page.querySelector('#acquireGroup').classList.toggle('dependentOff', !enabled);
                 }
 
                 // Nothing to decide when embedded tracks are not being processed at all.
@@ -774,6 +960,15 @@
                         page.querySelector('#chkDeduplicate').checked = config.DeduplicateSubtitles;
                         page.querySelector('#txtLanguages').value = (config.LanguageAllowList || []).join(', ');
 
+                        page.querySelector('#chkAcquire').checked = config.AcquireMissingSubtitles;
+                        page.querySelector('#txtMaxDownloads').value = config.MaxDownloadsPerItem;
+                        page.querySelector('#chkAcquireEmbedded').checked = config.AcquireWhenEmbeddedExists;
+                        page.querySelector('#chkAcquireHi').checked = config.AcquireHearingImpaired;
+                        page.querySelector('#txtDownloadProviders').value =
+                            (config.AdditionalDownloadProviders || []).join(', ');
+                        updateAcquireState(page, config.AcquireMissingSubtitles);
+                        loadProviders(page);
+
                         page.querySelector('#selWriteMode').value = config.ExternalWriteMode;
 
                         page.querySelector('#txtConcurrency').value = config.MaxConcurrentSyncs;
@@ -828,6 +1023,13 @@
                         config.DeduplicateSubtitles = page.querySelector('#chkDeduplicate').checked;
                         config.LanguageAllowList = splitList(page.querySelector('#txtLanguages').value);
 
+                        config.AcquireMissingSubtitles = page.querySelector('#chkAcquire').checked;
+                        config.MaxDownloadsPerItem = readInt(page, '#txtMaxDownloads', 3, 0, 50);
+                        config.AcquireWhenEmbeddedExists = page.querySelector('#chkAcquireEmbedded').checked;
+                        config.AcquireHearingImpaired = page.querySelector('#chkAcquireHi').checked;
+                        config.AdditionalDownloadProviders =
+                            splitList(page.querySelector('#txtDownloadProviders').value);
+
                         config.MaxConcurrentSyncs = readInt(page, '#txtConcurrency', 0, 0, 64);
 
                         config.AutoSyncOnItemAdded = page.querySelector('#chkAutoOnAdd').checked;
@@ -869,6 +1071,14 @@
 
                 document.querySelector('#chkConvertImage').addEventListener('change', function () {
                     updateCoveredOcrState(document.querySelector('#AutoSubSyncConfigPage'), this.checked);
+                });
+
+                document.querySelector('#chkAcquire').addEventListener('change', function () {
+                    updateAcquireState(document.querySelector('#AutoSubSyncConfigPage'), this.checked);
+                });
+
+                document.querySelector('#txtDownloadProviders').addEventListener('input', function () {
+                    renderProviderHint(document.querySelector('#AutoSubSyncConfigPage'));
                 });
 
                 document.querySelector('#AutoSubSyncConfigForm').addEventListener('submit', function (e) {
@@ -932,7 +1142,9 @@
                 document.querySelector('#btnRollback').addEventListener('click', function () {
                     var message = 'Undo everything this plugin has done?\n\n'
                         + 'Subtitles it overwrote are restored from their backups, and subtitle files '
-                        + 'it created are deleted. Its record of what was synchronized is cleared.';
+                        + 'it created are deleted. Its record of what was synchronized is cleared.\n\n'
+                        + 'Subtitles it downloaded are files it created, so they are deleted too, and '
+                        + 'replacing one costs another download from your provider account.';
 
                     if (!confirm(message)) {
                         return;
@@ -961,7 +1173,10 @@
                     var message = 'Forget everything this plugin has already synchronized?\n\n'
                         + 'No files will change, but the next scan will re-examine your whole library. '
                         + 'Any backups this plugin has taken will be left in its data folder with no '
-                        + 'record of what they belong to.';
+                        + 'record of what they belong to.\n\n'
+                        + 'The record of which downloaded subtitles were already tried and rejected '
+                        + 'goes with it, so the next scan buys those again. This costs provider '
+                        + 'allowance, not files.';
 
                     if (!confirm(message)) {
                         return;

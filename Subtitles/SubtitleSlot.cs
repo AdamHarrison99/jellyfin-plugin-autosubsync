@@ -9,5 +9,8 @@ public enum SubtitleSourceRank
     ExternalText = 0,
     EmbeddedText = 1,
     ExternalImage = 2,
-    EmbeddedImage = 3
+    EmbeddedImage = 3,
+
+    // ! Last. Nothing already on disk should wait behind a network fetch.
+    Acquire = 4
 }

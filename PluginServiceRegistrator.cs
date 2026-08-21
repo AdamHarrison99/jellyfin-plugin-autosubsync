@@ -1,4 +1,4 @@
-﻿using Jellyfin.Plugin.AutoSubSync.Cli;
+using Jellyfin.Plugin.AutoSubSync.Cli;
 using Jellyfin.Plugin.AutoSubSync.Data;
 using Jellyfin.Plugin.AutoSubSync.EventHandlers;
 using Jellyfin.Plugin.AutoSubSync.Services;
@@ -28,6 +28,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<SeConvRuntime>();
         serviceCollection.AddSingleton<ISeConvRunner, SeConvRunner>();
 
+        serviceCollection.AddSingleton<ISubtitleSource, JellyfinSubtitleSource>();
         serviceCollection.AddSingleton<ISubtitleExtractor, FfmpegSubtitleExtractor>();
         serviceCollection.AddSingleton<ImageSubtitleExtractor>();
         serviceCollection.AddSingleton<SubtitleDiscoveryService>();
@@ -44,6 +45,8 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<SyncCancellation>();
         serviceCollection.AddSingleton<SyncQueue>();
         serviceCollection.AddSingleton<TargetLocks>();
+        serviceCollection.AddSingleton<ProviderRetirement>();
+        serviceCollection.AddSingleton<SubtitleAcquirer>();
         serviceCollection.AddSingleton<SyncVerifier>();
         serviceCollection.AddSingleton<SyncOrchestrator>();
         serviceCollection.AddSingleton<SubtitleDeduplicator>();

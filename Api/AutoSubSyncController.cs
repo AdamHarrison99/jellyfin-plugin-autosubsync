@@ -1,4 +1,4 @@
-﻿using Jellyfin.Plugin.AutoSubSync.Cli;
+using Jellyfin.Plugin.AutoSubSync.Cli;
 using Jellyfin.Plugin.AutoSubSync.Configuration;
 using Jellyfin.Plugin.AutoSubSync.Data;
 using Jellyfin.Plugin.AutoSubSync.Models;
@@ -21,6 +21,7 @@ public class AutoSubSyncController : ControllerBase
     private readonly ISyncStore _store;
     private readonly ILibraryManager _libraryManager;
     private readonly SubtitleDiscoveryService _discovery;
+    private readonly ISubtitleSource _source;
     private readonly SyncOrchestrator _orchestrator;
     private readonly SyncQueue _queue;
     private readonly SyncCancellation _cancellation;
@@ -35,6 +36,7 @@ public class AutoSubSyncController : ControllerBase
         ISyncStore store,
         ILibraryManager libraryManager,
         SubtitleDiscoveryService discovery,
+        ISubtitleSource source,
         SyncOrchestrator orchestrator,
         SyncQueue queue,
         SyncCancellation cancellation,
@@ -52,6 +54,7 @@ public class AutoSubSyncController : ControllerBase
         _queue = queue;
         _cancellation = cancellation;
         _rollback = rollback;
+        _source = source;
         _reconciler = reconciler;
         _gate = gate;
         _runtime = runtime;
@@ -87,6 +90,7 @@ public class AutoSubSyncController : ControllerBase
                 r.Status == SyncStatus.Skipped && !SyncOutcome.NothingToDo(r)),
             DryRun = records.Count(r => r.Status == SyncStatus.DryRun),
             Unsupported = records.Count(r => r.Status == SyncStatus.Unsupported),
+            Downloaded = records.Count(IsDownloadSurvivor),
             // A payload fetch and a retry both park here.
             Waiting = records.Count(r => r.Status == SyncStatus.Pending),
 
@@ -216,6 +220,11 @@ public class AutoSubSyncController : ControllerBase
             dependencies.Add(Dependency("Subtitle converter", converter.IsReady, converter.Message));
         }
 
+        if (config.AcquireMissingSubtitles)
+        {
+            dependencies.Add(ProviderDependency(config));
+        }
+
         if (config.ConvertImageSubtitles)
         {
             var tesseract = SeConvRuntime.ResolveTesseractDirectory();
@@ -233,7 +242,89 @@ public class AutoSubSyncController : ControllerBase
     private static object Dependency(string name, bool ready, string message)
         => new { Name = name, Ready = ready, Message = message };
 
-    // ! Only steps the settings actually turn on. Acquire is unbuilt, so it is not here.
+    // ! Three situations a plain count collapses into one. The middle one names the provider
+    //   that misled the admin, since nothing in the API says which providers download.
+    private object ProviderDependency(PluginConfiguration config)
+    {
+        const string Name = "Subtitle providers";
+
+        if (_source.Survey(config) is not { } providers)
+        {
+            return Dependency(
+                Name,
+                false,
+                "No movie or episode is in the library yet, so the provider list cannot be read.");
+        }
+
+        var enabled = providers.Where(p => p.IsEnabled).ToList();
+        var downloaders = enabled.Where(p => p.IsDownloader).Select(p => p.Name).ToList();
+
+        if (downloaders.Count > 0)
+        {
+            // ! "then", not "and". The first provider to answer is the one that is used.
+            return Dependency(Name, true, string.Join(", then ", downloaders) + ".");
+        }
+
+        if (enabled.Count == 0)
+        {
+            return Dependency(Name, false, "None installed. Nothing will be downloaded.");
+        }
+
+        var installed = string.Join(", ", enabled.Select(p => p.Name));
+        return Dependency(
+            Name,
+            false,
+            $"{installed} {(enabled.Count == 1 ? "is" : "are")} installed, but "
+            + $"{(enabled.Count == 1 ? "it does" : "none of them")} "
+            + "download subtitles. Nothing will be downloaded.");
+    }
+
+    // The installed providers, so the settings page can judge the names the admin typed.
+    [HttpGet("Providers")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public ActionResult<object> GetProviders()
+    {
+        var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
+
+        return Ok(new
+        {
+            Shipped = DownloadProviders.Shipped,
+            Installed = _source.Survey(config)?
+                .Select(p => new { p.Name, p.IsDownloader, p.IsEnabled })
+                .ToList()
+        });
+    }
+
+    // ! Survivors only, and no File.Exists. Status carries whether the file is still there,
+    //   one scan behind; a stat per record per poll is thousands of calls over a slow share.
+    private static bool IsDownloadSurvivor(SyncRecord record)
+        => record.Status == SyncStatus.Synced
+           && record.Provenance == SubtitleProvenance.Created
+           && record.Stages.Exists(s =>
+               s.Kind == SubtitleStageKind.Acquire && s.Outcome == StageOutcome.Succeeded);
+
+    // ! Fetches, not records — the only row on the table that counts them. One target can buy
+    //   and refuse several candidates, and the ledger is what holds them.
+    private static object AcquireRow(List<SyncRecord> records)
+    {
+        var attempts = records.SelectMany(r => r.AcquireAttempts).ToList();
+        var stages = records
+            .SelectMany(r => r.Stages.Where(s => s.Kind == SubtitleStageKind.Acquire))
+            .ToList();
+
+        return new
+        {
+            Kind = SubtitleStageKind.Acquire.ToString(),
+            Succeeded = attempts.Count(a => a.Outcome == AcquireAttemptOutcome.Kept),
+
+            // Targets that fetched nothing at all: nothing offered, or everything filtered out.
+            Skipped = stages.Count(s => s.Outcome == StageOutcome.Skipped),
+            Failed = attempts.Count(a => a.Outcome != AcquireAttemptOutcome.Kept),
+            AverageMs = AverageMs(stages)
+        };
+    }
+
+    // ! Only steps the settings actually turn on.
     private static List<object> SummarizeStages(List<SyncRecord> records, PluginConfiguration config)
     {
         // ! Paired back to its record. A stage outcome alone cannot tell a refusal from a failure.
@@ -250,7 +341,7 @@ public class AutoSubSyncController : ControllerBase
             (Kind: SubtitleStageKind.Deduplicate, On: config.DeduplicateSubtitles)
         };
 
-        return pipeline
+        var rows = pipeline
             .Where(step => step.On)
             .Select(step => (object)new
             {
@@ -265,6 +356,14 @@ public class AutoSubSyncController : ControllerBase
                 AverageMs = AverageMs(byKind[step.Kind].Select(x => x.Stage))
             })
             .ToList();
+
+        // ! First. Acquisition runs before anything else the pipeline does to a subtitle.
+        if (config.AcquireMissingSubtitles)
+        {
+            rows.Insert(0, AcquireRow(records));
+        }
+
+        return rows;
     }
 
     // ! Mean over the runs that were timed, never a lifetime total; a total only ever grows.

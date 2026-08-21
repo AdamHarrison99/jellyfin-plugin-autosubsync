@@ -10,11 +10,16 @@
 //   - StillOurOutput dropping the backup/Created half     -> every record counts as ours
 //   - MinimumWouldNowSync reading AppliedOffsetMs again    -> a demoted row reopens for ever
 //   - ToleranceWouldNowSync judging a magnitude            -> a stored refusal churns
+//   - Decide consulting the engine score with confirmation on -> the governing rule is gone
+//   - Decide falling through Inconclusive to Accept        -> unverified subtitles get written
+//   - AcquiredOutputSurvives always true                   -> a deleted download is never replaced
+//   - AcquiredOutputSurvives dropped from IsStillCurrent   -> the same file is bought every night
 
 using Jellyfin.Plugin.AutoSubSync.Configuration;
 using Jellyfin.Plugin.AutoSubSync.Data;
 using Jellyfin.Plugin.AutoSubSync.Models;
 using Jellyfin.Plugin.AutoSubSync.Services;
+using Jellyfin.Plugin.AutoSubSync.Subtitles;
 
 var failures = 0;
 var root = Path.Combine(Path.GetTempPath(), "orchestratorcheck-" + Guid.NewGuid().ToString("N"));
@@ -195,6 +200,9 @@ void Run()
         return reopened.Count == 0 ? null : $"reopened on {string.Join(", ", reopened)}";
     });
 
+    Decisions();
+    AcquireGates();
+
     Check("a refusal the widened bound now accepts is retried", () =>
     {
         var (record, target) = Placed(SubtitleProvenance.Retimed, backup: true);
@@ -205,6 +213,329 @@ void Run()
             ? "a refusal the check would now accept stayed parked"
             : null;
     });
+}
+
+
+// The verdict-to-decision gates, shared by the sync path and the acquire path.
+void Decisions()
+{
+    Console.WriteLine();
+    Console.WriteLine("What do the gates decide about an engine result?");
+
+    Check("an aligned result with no rescale is accepted", () =>
+        Decide(Aligned(), Moved(400)) is { Kind: SyncDecisionKind.Accept } d && d.Accepted
+            ? null
+            : "the result was not accepted");
+
+    Check("a misaligned result is refused and carries the signed miss", () =>
+    {
+        var d = Decide(new VerificationResult(SyncVerdict.Misaligned, -900, null, 12, 2.1), Moved(400));
+
+        if (d.Accepted) { return "a misaligned result was accepted"; }
+        if (d.Kind != SyncDecisionKind.Misaligned) { return $"wrong branch: {d.Kind}"; }
+        if (d.RejectedOffsetMs != -900) { return $"the miss lost its sign: {d.RejectedOffsetMs}"; }
+
+        return d.Message!.Contains("out of alignment", StringComparison.Ordinal)
+            ? null
+            : $"wrong message: {d.Message}";
+    });
+
+    // ! Signed. A magnitude cannot be judged against a bound centred on the authored lead.
+    Check("a drifting misaligned result reports the drift, not the shift", () =>
+    {
+        var drift = SyncVerifier.DriftWithinMs + 200;
+        var d = Decide(new VerificationResult(SyncVerdict.Misaligned, -50, -drift, 12, 2.1), Moved(400));
+
+        if (d.RejectedOffsetMs != -drift) { return $"reported {d.RejectedOffsetMs}, wanted {-drift}"; }
+
+        return d.Message!.Contains("drifting across the runtime", StringComparison.Ordinal)
+            ? null
+            : $"wrong message: {d.Message}";
+    });
+
+    Check("a rescale the check never measured is refused", () =>
+    {
+        var d = Decide(Unmeasured(), new OffsetChange(400, SyncVerifier.DriftWithinMs + 300, 1.04));
+
+        if (d.Accepted) { return "an unmeasured rescale was accepted"; }
+
+        return d.Kind == SyncDecisionKind.UnmeasuredStretch ? null : $"wrong branch: {d.Kind}";
+    });
+
+    // ! Two reasons, not one. The panel groups by message text.
+    Check("a title too short to measure drift gets its own reason", () =>
+    {
+        var stretch = new OffsetChange(400, SyncVerifier.DriftWithinMs + 300, 1.04);
+        var shortTitle = Decide(
+            new VerificationResult(SyncVerdict.Aligned, 170, null, SyncVerifier.DriftWindows - 1, 2.1),
+            stretch);
+        var flatTitle = Decide(Unmeasured(), stretch);
+
+        if (!shortTitle.Message!.Contains("too short", StringComparison.Ordinal))
+        {
+            return $"the short title lost its reason: {shortTitle.Message}";
+        }
+
+        return flatTitle.Message!.Contains("too short", StringComparison.Ordinal)
+            ? "a measurable title claimed it was too short"
+            : null;
+    });
+
+    Check("a flat coarse reading releases a rescale the drift test never judged", () =>
+    {
+        var released = new VerificationResult(
+            SyncVerdict.Aligned, 170, null, SyncVerifier.DriftWindows - 2, 2.1, CoarseDriftMs: 100);
+        var d = Decide(released, new OffsetChange(400, SyncVerifier.DriftWithinMs + 300, 1.04));
+
+        if (!d.Accepted) { return $"the release was refused: {d.Message}"; }
+
+        return d.Kind == SyncDecisionKind.AcceptStretchReleased ? null : $"wrong branch: {d.Kind}";
+    });
+
+    // ! The governing rule. With confirmation on, nothing unverified is ever written.
+    Check("an inconclusive verdict is refused outright while confirmation is required", () =>
+    {
+        var consulted = false;
+        var d = SyncDecisionMaker.Decide(
+            Inconclusive(),
+            Moved(400),
+            () => { consulted = true; return 99; },
+            scoreWanted: false,
+            Config());
+
+        if (d.Accepted) { return "an unconfirmed result was accepted"; }
+        if (consulted) { return "the engine score was consulted with confirmation on"; }
+        if (d.Kind != SyncDecisionKind.NoVerdict) { return $"wrong branch: {d.Kind}"; }
+
+        return d.Message == SyncOutcome.NoVerdictRefusal ? null : $"wrong message: {d.Message}";
+    });
+
+    Check("an inconclusive verdict falls to the engine score once confirmation is off", () =>
+    {
+        var d = Decide(
+            Inconclusive(), Moved(400), confirm: false, score: SyncDecisionMaker.MinimumEngineScore);
+
+        return d.Accepted ? null : $"a scored result was refused: {d.Message}";
+    });
+
+    Check("an engine score under the floor is refused", () =>
+    {
+        var d = Decide(
+            Inconclusive(), Moved(400), confirm: false, score: SyncDecisionMaker.MinimumEngineScore - 0.1);
+
+        if (d.Accepted) { return "a result under the score floor was accepted"; }
+
+        return d.Kind == SyncDecisionKind.LowEngineScore ? null : $"wrong branch: {d.Kind}";
+    });
+
+    Check("an unscored inconclusive result is refused", () =>
+    {
+        var d = Decide(Inconclusive(), Moved(400), confirm: false, score: null);
+
+        if (d.Accepted) { return "a result the engine never scored was accepted"; }
+
+        return d.Kind == SyncDecisionKind.NoEngineScore ? null : $"wrong branch: {d.Kind}";
+    });
+
+    // ! Ahead of the score gates. An unconfirmed move this large is refused whatever it scored.
+    Check("an unconfirmed move past the ceiling is refused before the score is read", () =>
+    {
+        var consulted = false;
+        var d = SyncDecisionMaker.Decide(
+            Inconclusive(),
+            Moved(SyncDecisionMaker.MaximumUnverifiedShiftMs + 1),
+            () => { consulted = true; return 99; },
+            scoreWanted: false,
+            Config(confirm: false));
+
+        if (d.Accepted) { return "an unconfirmed move past the ceiling was accepted"; }
+        if (consulted) { return "the engine score was read before the ceiling refused it"; }
+
+        return d.Kind == SyncDecisionKind.UnverifiedShift ? null : $"wrong branch: {d.Kind}";
+    });
+
+    // ! It parses the produced file. An accepted sync must not pay for it unasked.
+    Check("the engine score is left unread on an aligned result nothing asked about", () =>
+    {
+        var consulted = false;
+        SyncDecisionMaker.Decide(
+            Aligned(),
+            Moved(400),
+            () => { consulted = true; return 99; },
+            scoreWanted: false,
+            Config());
+
+        return consulted ? "the produced file was parsed for nothing" : null;
+    });
+
+    Check("a caller that wants the score for its log gets it back", () =>
+    {
+        var d = SyncDecisionMaker.Decide(Aligned(), Moved(400), () => 61.5, scoreWanted: true, Config());
+
+        return d.EngineScore == 61.5 ? null : $"the score did not come back: {d.EngineScore}";
+    });
+}
+
+static VerificationResult Aligned()
+    => new(SyncVerdict.Aligned, SyncVerifier.TypicalLeadMs, 0, 12, 2.1);
+
+// Aligned, on a title whose drift the check never measured.
+static VerificationResult Unmeasured()
+    => new(SyncVerdict.Aligned, SyncVerifier.TypicalLeadMs, null, 12, 2.1);
+
+static VerificationResult Inconclusive()
+    => new(SyncVerdict.Inconclusive, null, null, 12, 1.1);
+
+static OffsetChange Moved(long constantMs) => new(constantMs, 0, 1.0);
+
+static SyncDecision Decide(
+    VerificationResult verdict,
+    OffsetChange change,
+    bool confirm = true,
+    double? score = null)
+    => SyncDecisionMaker.Decide(verdict, change, () => score, scoreWanted: false, Config(confirm));
+
+// The acquire target has no source file, so the video hash is the whole fingerprint.
+void AcquireGates()
+{
+    Console.WriteLine();
+    Console.WriteLine("What reopens a downloaded subtitle?");
+
+    Check("a placed download is left alone while its file is there", () =>
+    {
+        var (record, target) = Acquired();
+
+        return SyncOrchestrator.IsStillCurrent(record, target, null, Config())
+            ? null
+            : "a download still on disk was offered again";
+    });
+
+    // ! The re-acquire loop. Nothing else stands between a deleted sidecar and a second purchase
+    //   on every scan until the library catches up.
+    Check("a download the user deleted is bought again", () =>
+    {
+        var (record, target) = Acquired();
+        File.Delete(record.OutputPath!);
+
+        return SyncOrchestrator.IsStillCurrent(record, target, null, Config())
+            ? "a download that is gone was treated as current"
+            : null;
+    });
+
+    Check("a replaced video reopens the download", () =>
+    {
+        var (record, target) = Acquired();
+        File.WriteAllBytes(target.VideoPath, Enumerable.Range(0, 8192).Select(i => (byte)i).ToArray());
+
+        return SyncOrchestrator.IsStillCurrent(record, target, null, Config())
+            ? "a download for another video was treated as current"
+            : null;
+    });
+
+    // ! Without this an exhausted row re-searches every provider every night.
+    Check("an exhausted acquire row is parked", () =>
+    {
+        var (record, target) = Acquired();
+        record.Status = SyncStatus.Failed;
+        record.OutputPath = null;
+        record.Message = "Failed: every subtitle offered for this language was refused.";
+
+        return SyncOrchestrator.IsExhausted(record, target, Config())
+            ? null
+            : "an exhausted row would re-search on the next scan";
+    });
+
+    Check("a refusal the widened bound now accepts reopens the search", () =>
+    {
+        var (record, target) = Acquired();
+        record.Status = SyncStatus.Failed;
+        record.OutputPath = null;
+        record.RejectedOffsetMs = SyncVerifier.TypicalLeadMs;
+
+        return SyncOrchestrator.IsExhausted(record, target, Config())
+            ? "a refusal the check would now accept stayed parked"
+            : null;
+    });
+
+    Console.WriteLine();
+    Console.WriteLine("Where does an acquire outcome land on the panel?");
+
+    // ! The set-aside family is on no card. Failing them fills the panel with one fact.
+    Check("nothing bought is a skip, never a failure", () =>
+    {
+        foreach (var result in new[]
+                 {
+                     AcquireResult.NothingOffered,
+                     AcquireResult.HearingImpairedOnly,
+                     AcquireResult.AllFiltered,
+                     AcquireResult.ProvidersRetired
+                 })
+        {
+            if (SyncOrchestrator.StageFor(result) != StageOutcome.Skipped)
+            {
+                return $"{result} was not a skip";
+            }
+        }
+
+        return null;
+    });
+
+    Check("a download bought and refused is a failure", () =>
+    {
+        foreach (var result in new[]
+                 {
+                     AcquireResult.Exhausted,
+                     AcquireResult.CapReached,
+                     AcquireResult.Abstained
+                 })
+        {
+            if (SyncOrchestrator.StageFor(result) != StageOutcome.Failed)
+            {
+                return $"{result} was not a failure";
+            }
+        }
+
+        return SyncOrchestrator.StageFor(AcquireResult.Kept) == StageOutcome.Succeeded
+            ? null
+            : "a kept download was not a success";
+    });
+}
+
+// A downloaded subtitle this plugin placed, with no source file behind it.
+(SyncRecord Record, SubtitleTarget Target) Acquired()
+{
+    var id = Guid.NewGuid().ToString("N");
+    var video = Path.Combine(root, id + ".mkv");
+    var output = Path.Combine(root, id + ".eng.autosubsync.srt");
+
+    File.WriteAllBytes(video, Enumerable.Range(0, 8192).Select(i => (byte)(i % 251)).ToArray());
+    File.WriteAllText(output, "1\r\n00:00:01,000 --> 00:00:03,000\r\nthe downloaded file\r\n");
+
+    var target = new SubtitleTarget
+    {
+        ItemId = Guid.NewGuid(),
+        ItemName = "Test Item",
+        VideoPath = video,
+        Origin = SubtitleOrigin.Acquired,
+        Language = "eng",
+        Key = SubtitleTarget.AcquireKey("eng")
+    };
+
+    var record = new SyncRecord
+    {
+        Id = Guid.NewGuid(),
+        ItemId = target.ItemId,
+        ItemName = target.ItemName,
+        TargetKey = target.Key,
+        Origin = SubtitleOrigin.Acquired,
+        Status = SyncStatus.Synced,
+        Provenance = SubtitleProvenance.Created,
+        OutputPath = output,
+        SettingsStamp = Config().OutcomeStamp(),
+        VideoPartialHash = FileFingerprint.TryComputePartial(video)
+    };
+
+    return (record, target);
 }
 
 // A record and its target, with both files on disk and fingerprints taken from them.
@@ -246,7 +577,8 @@ void Run()
     return (record, target);
 }
 
-static PluginConfiguration Config() => new() { DryRunMode = false };
+static PluginConfiguration Config(bool confirm = true)
+    => new() { DryRunMode = false, RequireAudioConfirmation = confirm };
 
 void Check(string name, Func<string?> run)
 {

@@ -15,10 +15,19 @@
 // Given media it runs the real check instead:
 //
 //   dotnet run --project agentic/tools/verifycheck -- --video <path> --subtitle <path> [...]
+//
+// --mismatch is the standing control behind the download feature: every calibration video against
+// every other title's subtitle. One Aligned verdict there is a wrong subtitle entering a library.
 
+using System.Text.Json;
 using Jellyfin.Plugin.AutoSubSync.Cli;
 using Jellyfin.Plugin.AutoSubSync.Services;
 using Microsoft.Extensions.Logging.Abstractions;
+
+if (Array.IndexOf(args, "--mismatch") >= 0)
+{
+    return await Mismatch(args).ConfigureAwait(false);
+}
 
 if (Array.IndexOf(args, "--plan") >= 0)
 {
@@ -942,6 +951,107 @@ static int PlanOnly(string[] argv)
     return 0;
 }
 
+// Every video against every other title's subtitle. The one verdict that must never appear is
+// Aligned: nothing downstream separates a wrong match from a right one once the check confirms it.
+static async Task<int> Mismatch(string[] argv)
+{
+    var ffmpeg = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "ffmpeg", "ffmpeg.exe");
+    var casePath = Arg(argv, "--cases")
+        ?? Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "calibrate.local.json");
+
+    if (!File.Exists(casePath))
+    {
+        Console.Error.WriteLine(
+            $"verifycheck --mismatch: no case file at {Path.GetFullPath(casePath)}.");
+        Console.Error.WriteLine(
+            "  It is untracked and holds one { Id, Video, Subtitle } object per calibration title.");
+        return 2;
+    }
+
+    var cases = (JsonSerializer.Deserialize<List<MismatchCase>>(
+                     File.ReadAllText(casePath),
+                     new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+                 ?? [])
+        .Where(c => File.Exists(c.Video) && File.Exists(c.Subtitle))
+        .ToList();
+
+    if (cases.Count < 2)
+    {
+        Console.Error.WriteLine(
+            $"verifycheck --mismatch: {cases.Count} reachable case(s); the matrix needs at least 2.");
+        return 2;
+    }
+
+    var payload = Arg(argv, "--vad");
+    var detector = payload is null
+        ? null
+        : new PayloadDetector(Path.GetFullPath(payload), Path.GetFullPath(ffmpeg));
+
+    var verifier = new SyncVerifier(null!, NullLogger<SyncVerifier>.Instance, detector);
+
+    var aligned = new List<string>();
+    var misaligned = 0;
+    var inconclusive = 0;
+
+    Console.WriteLine($"Mismatched matrix over {cases.Count} titles, {cases.Count * (cases.Count - 1)} pairs");
+    Console.WriteLine();
+
+    foreach (var video in cases)
+    {
+        foreach (var subtitle in cases)
+        {
+            if (string.Equals(video.Id, subtitle.Id, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var result = await verifier
+                .VerifyAsync(Path.GetFullPath(ffmpeg), video.Video, subtitle.Subtitle, CancellationToken.None)
+                .ConfigureAwait(false);
+
+            var pair = $"{video.Id} <- {subtitle.Id}";
+
+            switch (result.Verdict)
+            {
+                case SyncVerdict.Aligned: aligned.Add(pair); break;
+                case SyncVerdict.Misaligned: misaligned++; break;
+                default: inconclusive++; break;
+            }
+
+            Console.WriteLine(
+                $"  {result.Verdict,-13} {result.BestShiftMs?.ToString() ?? "—",8}ms  "
+                + $"peak {result.Strength,5:F2}x  {result.Hits,4} hits / {result.Floor,4} floor  "
+                + $"{result.Windows,2} windows   {pair}");
+        }
+    }
+
+    Console.WriteLine();
+    Console.WriteLine(
+        $"  aligned {aligned.Count}   misaligned {misaligned}   inconclusive {inconclusive}");
+
+    // The refusals are mostly abstentions, and that is the finding, not a weakness in the sample.
+    if (aligned.Count == 0)
+    {
+        Console.WriteLine("verifycheck --mismatch: no mismatched pair was confirmed");
+        return 0;
+    }
+
+    foreach (var pair in aligned)
+    {
+        Console.Error.WriteLine($"  ALIGNED  {pair}");
+    }
+
+    Console.Error.WriteLine(
+        $"verifycheck --mismatch: {aligned.Count} mismatched pair(s) were confirmed as aligned");
+    return 1;
+
+    static string? Arg(string[] argv, string name)
+    {
+        var at = Array.IndexOf(argv, name);
+        return at >= 0 && at + 1 < argv.Length ? argv[at + 1] : null;
+    }
+}
+
 // The shipping check, over the vendored ffmpeg, against files whose state is already known.
 static async Task<int> RealMedia(string[] argv)
 {
@@ -1537,6 +1647,9 @@ internal sealed class RecordingDetector : ISpeechOnsetSource
 
 // The shipping fallback wired to the real payload: shipping argv in, shipping parser out. Only
 // the spawn is the harness's own, and AssyCliRunner is what does that in the plugin.
+// One case out of the untracked calibration set: a real video and the subtitle that belongs to it.
+internal sealed record MismatchCase(string Id, string Video, string Subtitle);
+
 internal sealed class PayloadDetector : ISpeechOnsetSource
 {
     private readonly string _exe;

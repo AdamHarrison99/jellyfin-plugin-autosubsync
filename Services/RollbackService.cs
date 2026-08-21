@@ -53,8 +53,9 @@ public class RollbackService
                 default: skipped++; break;
             }
 
-            // ! A failed record keeps its row; it is the only pointer to the backup.
-            if (outcome != RollbackOutcome.Failed)
+            // ! Two rows outlive a rollback: a failed one still points at its backup, and a spent
+            //   one still names the downloads nobody can un-buy.
+            if (outcome != RollbackOutcome.Failed && !Spent(record))
             {
                 undone.Add(record.Id);
             }
@@ -72,6 +73,10 @@ public class RollbackService
 
         return new RollbackReport(restored, deleted, skipped, failed);
     }
+
+    // A row that bought downloads and left nothing in the library behind them.
+    private static bool Spent(SyncRecord record)
+        => record.OutputPath is null && record.AcquireAttempts.Count > 0;
 
     private enum RollbackOutcome
     {

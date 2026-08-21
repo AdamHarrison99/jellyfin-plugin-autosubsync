@@ -98,6 +98,7 @@ Target **Jellyfin 10.11.x on net9.0**. Jellyfin 12 unreleased → ¬bump to its 
 | `namingcheck/` | Same-language tracks get distinct sidecar names; single-track names never change. Also the slot rule that skips a bitmap when readable text serves it — ! incl. the forced and hearing-impaired cases, ∵ a language-wide rule drops signs and songs |
 | `subcheck/` | Cue detection per format + SDH thresholds, incl. cases that must **¬**trip |
 | `placecheck/` | Placement never overwrites an OCR'd source; a stripped track loses its `sdh` token |
+| `acquirecheck/` | The download feature w/out a network: whitelist, ask order, gap test, filters, budget, fall-through, retirement, ledger. Indexed in **`CLAUDE.md`** |
 
 Measurement harnesses (`verifycheck`, `scorecheck`, `measurecheck`, `synccheck`, `dedupecheck`, `rollbackcheck`, `gatecheck`, `killcheck`, `formatcheck`, `langcheck`, `supsample`, `simulate-concurrency`, `check-rate-bound`, `check-sync-output`) are indexed in **`CLAUDE.md`** w/ what each exists to prove — ¬duplicated here. Most link the real source file → they cannot drift from what ships. ! Re-run the relevant one whenever its subject changes; a harness that drifted validates nothing.
 

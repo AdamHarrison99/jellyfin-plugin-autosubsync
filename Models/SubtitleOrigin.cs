@@ -6,5 +6,8 @@ namespace Jellyfin.Plugin.AutoSubSync.Models;
 public enum SubtitleOrigin
 {
     External = 0,
-    Embedded = 1
+    Embedded = 1,
+
+    // Downloaded from a provider. Carries no source file on disk.
+    Acquired = 2
 }

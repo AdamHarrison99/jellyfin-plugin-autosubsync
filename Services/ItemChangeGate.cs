@@ -108,7 +108,8 @@ public class ItemChangeGate
     // ! Wider than OutcomeStamp: anything changing which targets exist, or which results are
     //   kept, has to reopen an item the gate already closed.
     private static string GateStamp(PluginConfiguration config)
-        => string.Join(
+    {
+        var stamp = string.Join(
             '|',
             config.OutcomeStamp(),
             config.ProcessExternalSubtitles,
@@ -116,4 +117,15 @@ public class ItemChangeGate
             !config.ProcessEmbeddedWhenExternalExists,
             config.DeduplicateSubtitles,
             string.Join(',', config.LanguageAllowList));
+
+        // ! Appended only while acquisition is on. An install that leaves it off keeps its stamp.
+        return config.AcquireMissingSubtitles
+            ? string.Join(
+                '|',
+                stamp,
+                "acq",
+                config.AcquireWhenEmbeddedExists,
+                config.AcquireHearingImpaired)
+            : stamp;
+    }
 }

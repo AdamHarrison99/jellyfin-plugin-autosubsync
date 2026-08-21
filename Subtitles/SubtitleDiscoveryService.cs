@@ -2,6 +2,7 @@ using System.Globalization;
 using Jellyfin.Plugin.AutoSubSync.Cli;
 using Jellyfin.Plugin.AutoSubSync.Configuration;
 using Jellyfin.Plugin.AutoSubSync.Models;
+using Jellyfin.Plugin.AutoSubSync.Services;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Entities;
@@ -19,15 +20,21 @@ public class SubtitleDiscoveryService
 
     private readonly IMediaSourceManager _mediaSourceManager;
     private readonly ISubtitleExtractor _extractor;
+    private readonly ISubtitleSource _source;
+    private readonly ProviderRetirement _retirement;
     private readonly ILogger<SubtitleDiscoveryService> _logger;
 
     public SubtitleDiscoveryService(
         IMediaSourceManager mediaSourceManager,
         ISubtitleExtractor extractor,
+        ISubtitleSource source,
+        ProviderRetirement retirement,
         ILogger<SubtitleDiscoveryService> logger)
     {
         _mediaSourceManager = mediaSourceManager;
         _extractor = extractor;
+        _source = source;
+        _retirement = retirement;
         _logger = logger;
     }
 
@@ -42,9 +49,11 @@ public class SubtitleDiscoveryService
             return targets;
         }
 
+        // ! Kept whole. The gap test reads this list, never the filtered candidates built from it.
         var streams = _mediaSourceManager
             .GetMediaStreams(item.Id)
-            .Where(s => s.Type == MediaStreamType.Subtitle);
+            .Where(s => s.Type == MediaStreamType.Subtitle)
+            .ToList();
 
         var candidates = new List<Candidate>();
 
@@ -90,6 +99,9 @@ public class SubtitleDiscoveryService
 
         AssignVariants(candidates);
 
+        // ! After the suppression passes. An acquire target answers to none of them.
+        candidates.AddRange(BuildAcquireCandidates(item, streams, config));
+
         // Cheapest sources first, so text work completes before any OCR starts.
         foreach (var candidate in candidates.OrderBy(c => c.Rank))
         {
@@ -97,6 +109,119 @@ public class SubtitleDiscoveryService
         }
 
         return targets;
+    }
+
+    // One target per wanted language the item has nothing in.
+    private List<Candidate> BuildAcquireCandidates(
+        BaseItem item,
+        IReadOnlyList<MediaStream> streams,
+        PluginConfiguration config)
+    {
+        if (Gaps(streams, config) is not { } gaps)
+        {
+            _logger.LogDebug(
+                "{Item}: a subtitle here names no language, so no language can be called missing",
+                item.Name);
+            return [];
+        }
+
+        if (gaps.Count == 0)
+        {
+            return [];
+        }
+
+        // ! Before a single target is made. A server with no downloader would fill the panel,
+        //   and so would a sweep continuing after every provider stopped answering.
+        if (_retirement.Live(_source.Downloaders(item.Id, config)).Count == 0)
+        {
+            _logger.LogDebug("{Item}: no subtitle downloader is available", item.Name);
+            return [];
+        }
+
+        return gaps.Select(language => BuildAcquireCandidate(item, language)).ToList();
+    }
+
+    private static Candidate BuildAcquireCandidate(BaseItem item, string language)
+    {
+        var target = new SubtitleTarget
+        {
+            ItemId = item.Id,
+            ItemName = item.Name,
+            VideoPath = item.Path,
+            Origin = SubtitleOrigin.Acquired,
+            Language = language,
+            Key = SubtitleTarget.AcquireKey(language)
+        };
+
+        // ! Providers search by media path. A disc image or folder rip returns nothing, always.
+        if (item is Video video && video.VideoType != VideoType.VideoFile)
+        {
+            target.UnsupportedReason =
+                "Subtitle providers cannot search for a disc image or a disc folder rip.";
+        }
+
+        return new Candidate(target, SubtitleSourceRank.Acquire, IsExternal: true);
+    }
+
+    // Wanted languages this item has nothing in. Null where a subtitle names no language at all.
+    internal static List<string>? Gaps(IReadOnlyList<MediaStream> streams, PluginConfiguration config)
+    {
+        if (!config.AcquireMissingSubtitles)
+        {
+            return [];
+        }
+
+        var wanted = WantedLanguages(config);
+        if (wanted.Count == 0)
+        {
+            return [];
+        }
+
+        return Served(streams, config) is { } served
+            ? wanted.Where(language => !served.Contains(language)).ToList()
+            : null;
+    }
+
+    // Languages already served, or null where a subtitle names no language at all.
+    private static HashSet<string>? Served(IReadOnlyList<MediaStream> streams, PluginConfiguration config)
+    {
+        var served = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var stream in streams)
+        {
+            // ! The opt-out, and it is off by default. Most items without a sidecar carry a track.
+            if (!stream.IsExternal && config.AcquireWhenEmbeddedExists)
+            {
+                continue;
+            }
+
+            // ! A track nobody labelled could be any language, so nothing can be proved missing.
+            if (LanguageCodes.Normalize(stream.Language) is not { } key)
+            {
+                return null;
+            }
+
+            served.Add(key);
+        }
+
+        return served;
+    }
+
+    // The allow list, canonical and in the order it was typed. Empty leaves the feature inert.
+    internal static List<string> WantedLanguages(PluginConfiguration config)
+    {
+        var wanted = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var entry in config.LanguageAllowList)
+        {
+            if (LanguageCodes.Normalize(entry) is { } code && seen.Add(code))
+            {
+                wanted.Add(code);
+            }
+        }
+
+        return wanted;
     }
 
     private static bool IsProcessable(Candidate candidate, PluginConfiguration config)

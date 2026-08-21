@@ -22,9 +22,16 @@ POST /SyncItem      ─┘                                                      
                                                                                     │
                                                                                     v
                                                                 SyncStore (JSON, per target)
+
+acquire target only:  SubtitleAcquirer ─> ISubtitleSource ─> ISubtitleManager ─> provider plugins
+                             │                    ^
+                             v                    │
+                      ProviderRetirement ─────────┘   (exhausted / unauthenticated, per sweep)
 ```
 
 `POST /RollbackAll` runs the graph backwards: `RollbackService` reads the store, restores from `BackupVault` or deletes what the plugin wrote, removes the rows.
+
+**An acquire target takes a different route.** It has no input file, so steps ②–③ have nothing to produce and `RunAcquireAsync` replaces ④–⑪ w/ a loop over candidates, each of which runs ④–⑩ for itself. → *`SubtitleAcquirer`*.
 
 **Per-target order in `SyncOrchestrator`:** ⓪ take the lease (`TargetLocks`, before the record is read) → ① skip if current (`IsStillCurrent`, ahead of any extraction) → ② produce an input (sidecar path, or ffmpeg extraction) → ③ Convert (OCR, bitmap targets only) → ④ read the audio (one `SyncVerifier.SampleAsync`, shared by ⑤ and ⑧) → ⑤ does it need syncing? (a subtitle the audio agrees with never reaches the engine) → ⑥ Sync (one `ffsubsync` run) → ⑦ bound the change (`MaximumRateDrift`; `MinimumMovementMs`) → ⑧ Verify (same sample; ahead of the transform so it reads the cues the engine placed) → ⑨ Transform (strip HI) → ⑩ Place → ⑪ `IProviderManager.QueueRefresh`.
 
@@ -36,7 +43,8 @@ These recur in a dozen components; they are stated once here and cited rather th
 - ! **Nothing throws out of `ProcessAsync`.** One bad file must never abort a library sweep. Every store write goes through `SafeUpsert`, which swallows + logs — `ProcessAsync` writes records from inside its own catch blocks.
 - ! **Settings are retroactive**, by two mechanisms → *Models/* below. Anything gating work must participate in one of them or the guarantee silently stops at that gate.
 - ! **Provenance decides restore-vs-delete**, and is stored, never inferred → *`RollbackService`*.
-- ! **Dry run is a filesystem lock on the media library**, ¬a logging mode. The plugin's own record store is still written. Re-verify unreachability whenever a new pipeline entry point is added.
+- ! **Dry run is a lock on every effect observable outside the plugin's own record store** — ¬a logging mode, and ¬the filesystem alone. It was a media-filesystem lock until acquisition existed; **a provider search is a network request under the admin's account, against a finite allowance**, so it is locked by the same rule. Re-verify unreachability whenever a new pipeline entry point is added, and trace network calls as well as writes. The dry-run branch sits **ahead of all of it**, in `ProcessAsync`, before an acquire target reaches the acquirer.
+  - ! **A dry run reports *would search*, ¬*would download*.** How many gaps a provider could fill, and at what cost in candidates, is unknowable w/out asking it. A downloads figure would be invented.
 
 ---
 
@@ -398,6 +406,19 @@ One `.idx` can declare any number of language streams — "Gravity 2013 1080p Bl
 
 `SyncStatus.Skipped`, `SyncStatus.Unsupported` and `SyncStatus.SetAside` are three distinct things: `Skipped` = processed, result discarded as a no-op; `Unsupported` = never processable; `SetAside` = processable, and a setting chose not to. One status covering any two would make the count unexplainable — which is what *unsupported* covering the last of them did, and it read to the user as the plugin claiming it could not handle a track it simply declined to.
 
+**The gap test, and the acquire target.** Behind `AcquireMissingSubtitles`, discovery also asks the inverse question: **which wanted languages does this item have nothing in?** `Gaps` runs over the *same* `MediaStream` list, after `AssignVariants`, and appends one target per empty language w/ `Origin = Acquired`, `Key = "acq:<language>"` and `SubtitleSourceRank.Acquire` — last, so every cheap text sync in the library finishes before the first network call.
+
+- ! **The comparison is `LanguageKey` alone, ¬`SubtitleSlot`.** A slot is (language, forced, HI) and exists to match and de-duplicate *existing* targets; reaching for it here would buy a second English file for an item that already has an English SDH track. **A slot is a language, for this test only.** An implementer reaching for the nearest available helper picks the wrong one.
+- ! **The plugin's own output is in that stream list, and counts.** That is what stops the next sweep buying a second copy of what the last one bought. → the acquire target disappears the moment the download succeeds, which `RecordReconciler` has to know about.
+- ! **An embedded track fills the language, and that is the default.** Most items w/out a sidecar carry one, so the opposite default aims the feature at nearly the whole library. `AcquireWhenEmbeddedExists` is the opt-out and the config page says what it costs.
+- ! **A subtitle naming no language makes the whole item ineligible** — `Served` returns null and **no** language yields a target. An unlabelled track could be any language, so nothing can be *proved* empty. The alternative — unlabelled serves nothing — points the feature at every item w/ a bare `Movie.srt`, which is a large share of a typical library. Recorded in `IDEA-ACQUIRE.md` as a **decision to reopen**, ¬a defect to patch.
+- **Known consequence:** a *forced-only* track fills its language too. Also a recorded decision, ¬an oversight.
+- ! **Preflight, before a single target is made:** no live known downloader → **no acquire targets at all**. The naive shape — make the targets, let each discover there is no provider — files one identical failed row per item in the library, which is the panel-flooding failure the *stop the sweep* rule exists to prevent. The only visible effect is the provider dependency row on the config page. It consults `ProviderRetirement` too, so a sweep that has exhausted every account stops creating targets rather than failing them.
+- ! **Per item, ¬once per sweep.** `DisabledSubtitleFetchers` is a **per-library** setting, so one answer cannot speak for the whole scan. It costs nothing on the items that matter ∵ it runs only where a gap already exists.
+- ! **A disc image or a disc folder rip gets `UnsupportedReason`, ¬a target that fails.** Providers search by media path and return nothing for those, always.
+
+**Costs zero extra I/O.** `GetMediaStreams(item.Id)` is already called once per item.
+
 ### `LanguageCodes`
 
 Reduces any language code to one canonical ISO 639-2/T form so the allowlist can be compared against what a container actually carries. **Both sides are normalized** → the user's entry and the stream's tag can be in different forms and still match. Three separate problems, only one of them the user's fault:
@@ -414,6 +435,32 @@ The two-letter table is explicit rather than derived from `CultureInfo` → beha
 - ! **A hyphenated locale must survive intact.** `zh-Hans` and `zh-Hant` are Simplified and Traditional Chinese; reducing either to `zho` throws away a distinction Jellyfin would have kept. `ForFilename` passes anything containing a hyphen through untouched and normalizes the rest.
 
 The delimiter set is `['.']` only → a hyphen inside a token is never split, which is what makes passing the locale through safe rather than merely hopeful. Flag vocabulary checked at the same time: `MediaForcedFlags` = `foreign, forced`, `MediaHearingImpairedFlags` = `cc, hi, sdh` → the `forced` and `sdh` segments `SubtitleNaming` writes are both recognized.
+
+### `DownloadProviders`
+
+The whitelist and the ask order, as pure functions over strings so `acquirecheck` can drive them w/out a server.
+
+Nothing in Jellyfin's API says whether a subtitle provider **downloads** files or merely reports on them, and the plugin must not aim a download at something that cannot answer. → **classify by name.** `Shipped` is the list of known downloaders, quoted from each plugin's own source rather than its listing name: `Open Subtitles` (**w/ a space** — the spaceless guess matches nothing), `Addic7ed/Gestdown Subtitles`, `subbuzz`.
+
+! **Matching is exact, case-insensitive, on the trimmed name — ¬substring.** A plugin named *"Local Subs (OpenSubtitles naming)"* contains a whitelisted name and is not a downloader; substring matching lets exactly the plugin this rule exists for through the gate.
+
+! **The list goes stale by construction**, which is why `AdditionalDownloadProviders` exists. A shipped-only list means a newly released or renamed downloader is dead until this plugin ships again.
+
+`Order(installed, disabled, fetcherOrder, priority)` is the whole ask order in one place: everything named in `priority` first, in the order the admin typed it, then every other enabled downloader in the server's own `SubtitleFetcherOrder`. `Unresolved(priority, installed)` is what the config page renders in red.
+
+### `ISubtitleSource` / `JellyfinSubtitleSource`
+
+The single seam between this plugin and Jellyfin's subtitle providers. Everything above it — the acquirer, discovery's preflight, the controller — talks to the interface, so the whole feature is testable w/ a stub and no network.
+
+! **`GetRemoteSubtitles(id, ct)` is the only fetch used.** `ISubtitleManager.DownloadSubtitles` is a trap: it writes an **unmarked** sidecar straight into the media folder, which is a library write the plugin never authorized, cannot roll back, and would place before the audio check has seen a byte. `GetRemoteSubtitles` hands back a `SubtitleResponse` w/ an open `Stream` → the candidate lands in scratch and reaches the library only if it is confirmed.
+
+! **The `SubtitleSearchRequest` is built by hand.** The `Video` overload ignores `DisabledSubtitleFetchers` and `SubtitleFetcherOrder` outright → using it searches providers the admin turned off. The hand-built request sets `SearchAllProviders = false`, `SubtitleFetcherOrder = [the one provider]`, `DisabledSubtitleFetchers = every other enabled provider **unioned with** the admin's own disabled list`, and `IsAutomated = true`.
+
+! **Our exclusions are unioned w/ the admin's, never substituted for them.** Replacing them re-enables a provider the admin disabled for that library.
+
+! **Search results are ¬filtered on `ProviderName`.** The request scoping is what narrows the search; filtering the answers would drop **every** subbuzz result, ∵ subbuzz reports its internal source (`[subbuzz] Addic7ed.com`) rather than its own plugin name.
+
+`Survey` resolves one video via `GetItemList(… Limit = 1)` — providers are enumerated against a `BaseItem`, and any in-scope video answers. It **marks** disabled fetchers rather than dropping them, so the config page can say *installed but disabled for this library* instead of *not found*. `WarnUnresolved` logs an unresolvable name **once per spelling per config value**, ¬once per item.
 
 ### `SubtitleNaming`
 
@@ -645,6 +692,45 @@ Beneath that sits a guard for the case the check never measured: `verdict.DriftM
 
 **Dry run** returns before any filesystem work, and there is currently exactly one entry point to the pipeline. ! Note this also means **OCR never runs in dry run** — the Convert stage writes scratch files, and dry run is a filesystem lock, not a logging mode. It blocks writes to the *media library*; the plugin's own record store is still written, including the DryRun records themselves.
 
+**The acquire branch.** `RunAcquireAsync` replaces the pipeline for an `Acquired` target: it hands `SubtitleAcquirer` a scratch allocator and a **judge**, and stamps the row from the result. The judge is `JudgeCandidateAsync`, which runs the *same* gates as the sync path — the check, the engine, the stretch guard, the shared decision helper — over one fetched candidate.
+
+! **Two terminal branches invert, and getting this wrong loses a download silently.**
+
+- **Pre-sync check says `Aligned`** → for an existing subtitle that is *leave the file alone*; for a download it is **the result**. The file is already correctly timed, so it is kept w/out an engine run — running the engine on a correct file can only move it.
+- **Engine moved less than `MinimumMovementMs`** → for an existing subtitle that is *discard the output, the original stands*. For a download **there is no original**, so the branch is removed entirely rather than inverted. `IDEA-ACQUIRE.md` specified *keep the download as fetched*; that would write a subtitle the check has not confirmed, on the one path w/ nothing to fall back to. → **no minimum-movement exit at all**: the candidate goes to the audio check like any other and is kept or refused on the verdict alone.
+
+! **`Inconclusive` stops the whole item, ¬just the candidate**, whenever `RequireAudioConfirmation` is on. An abstention describes **this video's audio**, not the file — the next provider's candidate buys a second abstention at the price of another download. It keys on `verdict.Verdict == SyncVerdict.Inconclusive`, ¬on the decision kind.
+
+! **`IsStillCurrent` needs `AcquiredOutputSurvives`.** Between placing a download and Jellyfin listing it, the gap is still open and the target is still offered — w/out this the same file is bought again on every scan until the metadata catches up. `FingerprintMatches` treats `Acquired` like `Embedded`: there is no source file, so the video hash is the whole fingerprint.
+
+### `SubtitleAcquirer`
+
+One acquire target, one language, one candidate at a time. Providers in `DownloadProviders.Order`, minus anything `ProviderRetirement` has parked; **one search per provider**, and the next provider is asked only on `Misaligned` or on running out of candidates.
+
+! **`SearchAllProviders = false` consults only the first provider that answers**, so w/out the per-provider loop a second provider is dead weight. Searching lazily rather than `SearchAllProviders = true` keeps the common case — the first provider succeeds — at exactly one search.
+
+**Filtered before fetching, so it costs nothing:** an advertised-forced candidate (signs and songs cannot answer for the language), an advertised AI- or machine-translated one, a format the engine cannot read, and any id already in this row's ledger. ! `null` on those flags means *the provider did not say*, ¬*no*.
+
+**Filtered after fetching, so it does cost:** hearing-impaired, when `AcquireHearingImpaired` is off. The advertised flag is checked first and is free; the bytes are checked through the shipping `SdhDetector` ∵ the flag is frequently absent. → a post-fetch discard still counts against `MaxDownloadsPerItem`, and the outcome carries the fetches it spent.
+
+**Ranking is one promotion on a stable sort:** a file-hash match first, then the provider's own order untouched. Re-sorting the rest fights an ordering the provider made w/ better information than this plugin has.
+
+**The budget spans providers.** `MaxDownloadsPerItem` counts fetches for the whole target, so falling through does not reset it. `0` is **unlimited, ¬disabled** — w/ it, the provider account allowance is the only bound on one title.
+
+! **A provider that hit a wall is charged nothing.** No file arrived, so no fetch is counted.
+
+**Every fetch lands in the ledger** — `SyncRecord.AcquireAttempts`, one row per candidate w/ its id, provider and outcome. It is what stops the next sweep re-buying a candidate this one refused, and it is **never pruned**: a spent allowance does not stop having been spent. It survives a reopen and a remeasure, and it survives a rollback when the row placed nothing.
+
+### `ProviderRetirement`
+
+Sweep-scoped, reset by `FullLibrarySyncTask` at the top of every scan ∵ a spent allowance resets on the provider's clock.
+
+! **Retire the provider, ¬the sweep.** An exhausted OpenSubtitles allowance says nothing about whether subbuzz can answer. A retired provider is skipped for every remaining item; the sweep stops only when **every** known downloader is retired, which is what keeps an empty account from filing one identical failed row per item in the library.
+
+! **Detection is by exception *type name*, walked through the whole `InnerException` chain** — `RateLimit`/`TooManyRequests` and `Authentication`/`Unauthorized`. The provider plugins own those exception types and this repo cannot reference them; there is no contract to bind to. A bad credential is not transient either, so retrying that provider within the sweep cannot help → same treatment, different reason string.
+
+! **Nothing here hard-codes a provider's limits.** They are the provider's to set and to change, and a number compiled in here is wrong the day they move it. The plugin cannot read the remaining allowance at all — `ISubtitleManager` exposes none — so a **failure** is the only signal, and no run cap or day cap of the plugin's own exists. The trade is stated rather than buried: **one sweep may spend the whole day's allowance.** What bounds one title is `MaxDownloadsPerItem`; what bounds the day is the account, enforced where the true number lives.
+
 ### `SyncVerifier`
 
 Answers, from the video's own audio and nothing else, whether a subtitle's cues sit on the speech. The only component that can disagree w/ the sync engine, consulted **twice per target**: before the engine, to decide whether a sync is needed at all; after it, to decide whether the result may be written.
@@ -801,6 +887,8 @@ Enforces *The status panel invariant* in `CLAUDE.md`: **the UI may lag, it may n
 
 A row is **live** when the offered set contains its `TargetKey` **or** an offered target's `SubtitlePath` equals its `OutputPath`. ! The second half is not redundant. `TargetKey` is derived from the sidecar's path, and `SubtitleDeduplicator.Canonicalize` renames the survivor without moving its key → on key alone, deduplication's own tidy-up reports the surviving subtitle as missing the very next run.
 
+! **A download is live while its own file is on disk, whatever discovery offers.** Success is what *stops* an acquire target being offered — the placed file fills the very language that produced it — so the offer cannot decide this row. W/out the `Downloaded` clause a subtitle sitting in the library leaves the *downloaded* card on the scan after it was bought, which is the panel lying by the invariant's own definition. The clause tests the file, ¬the record: when the user deletes the download the language is empty again and discovery offers the gap a second time, which is how the row comes back by the ordinary route.
+
 A row that is no longer live is **retained and uncounted** when it names a `BackupPath` or an `OutputPath`, and **removed** only when it names neither. That split is the invariant's, ¬a convenience: a `BackupPath` row is the sole pointer into the vault and a `Created` row is the only proof rollback has that the plugin wrote that file. What is left over — a failed, unsupported or pending row that wrote nothing and backed nothing up — has no restorable state at all, and those are exactly the rows that were inflating the cards.
 
 Three call sites, all per item, all after the deduplicator: the full scan, `LibraryEventHandler`, and `SyncItem`. A deleted sidecar therefore stops counting on the next refresh of *that* item rather than on the next nightly sweep.
@@ -821,6 +909,8 @@ Undoes everything the plugin did to the library. One record, one verb, chosen by
 ! `Retimed` is the enum's **zero value on purpose** — a record deserialized from before the field existed defaults to the branch that *restores*; if it has no backup it reports `Skipped` and leaves the file alone. The wrong default here deletes user data silently.
 
 Records are removed only for outcomes that actually happened. A failed restore keeps both its row and its backup, ∵ the row is the only pointer into the vault and losing it strands the backup permanently. A delete refused for a marker mismatch counts as a failure for the same reason — changing `MarkerSuffix` after a sync would otherwise drop the record and leave the file.
+
+! **Rollback undoes files. It cannot undo a download.** A row that bought candidates and placed nothing keeps its row and its ledger — dropping it makes the next sweep buy every refused candidate a second time against the user's account, which rollback never promised to cost. A row whose download rollback **deleted** is removed like any other: its file is gone, the gap is open again, and the confirm dialog says replacing it costs another download.
 
 **Rollback runs even in dry run.** Dry run locks writes *into* the library; rollback only writes a file the user already owned or removes one the plugin made. A user who re-enabled dry run before deciding to undo would otherwise be stuck, and a dry-run record has no output and no backup anyway.
 
@@ -884,11 +974,21 @@ Rollback and "clear database" are deliberately **¬**tasks — things a user doe
 
 ! **The inversion is a rename, and a rename loses the stored element.** `SkipEmbeddedWhenExternalExists` shipped through 1.3.0.0; `XmlSerializer` binds by element name, so the new property would read as its own default and silently flip the setting on anyone who had chosen it. `[XmlElement("SkipEmbeddedWhenExternalExists")] bool? LegacySkip…` keeps reading the old element and `AdoptLegacySettings()` folds it — **on load only**. Folding on save would overwrite the choice the user just made w/ the value they had before. It nulls the legacy field as it folds, so it is idempotent and the element stops being written the first time the page saves. `configcheck` proves both directions plus the double-fold. `RunOcrWhenTextExists` needs none of this — it never shipped.
 
+**The `Download` section is four controls under one toggle**, all four greying out together — a live control under a dead toggle lies. `MaxDownloadsPerItem`, `AcquireWhenEmbeddedExists`, `AcquireHearingImpaired`, `AdditionalDownloadProviders`.
+
+! **`LanguageAllowList` empty means *every language*, and there is no such thing as downloading every language** → an empty box downloads **nothing**. That is a trap in the other direction from every other setting on the page, so the *Languages* description says so and the *Download* description repeats it. The same list is the priority order: first listed, first searched.
+
+! **`AdditionalDownloadProviders` does two jobs and the page must say so.** It extends the downloader whitelist **and** fixes the ask order. Listing a name that is already whitelisted is meaningful, ¬redundant — `SubBuzz, Open Subtitles` says *ask SubBuzz first*, which is the only way an admin can express a preference the server has no field for.
+
+! **A name that resolves to nothing is reported in red under the field, as it is typed.** W/out it a typo or a renamed plugin is completely silent: the name matches nothing, the order quietly reverts, and the page looks fine. `GET AutoSubSync/Providers` is what the hint reads, so it is checked before any save. A name that resolves but is **disabled for the library** gets the same red treatment — installed is not asked. ! Provider names come from third-party plugins → the hint escapes them before rendering.
+
 `OutputEncoding` is free text, blank-checked only, passed as `--encoding <value>`. No injection is possible (`ArgumentList`), but a bad value is exit 2 on every sync → S6 in the twenty-first pass.
 
 ## Api/`AutoSubSyncController`
 
-Four endpoints, all covered by a **class-level** `[Authorize(Policy = Policies.RequiresElevation)]` → a new endpoint inherits it.
+Five endpoints, all covered by a **class-level** `[Authorize(Policy = Policies.RequiresElevation)]` → a new endpoint inherits it.
+
+`GET Providers` returns the shipped whitelist and the installed providers, each marked downloader-or-not and enabled-or-not. It is the only thing the config page's red provider hint reads.
 
 `SyncItem` discovers targets synchronously and dispatches the work, returning `202 Accepted`. `RollbackAll` refuses w/ `409` while syncs are in flight, else returns the counts from `RollbackService`.
 
@@ -896,7 +996,9 @@ Four endpoints, all covered by a **class-level** `[Authorize(Policy = Policies.R
 
 ### `Status` and what it deliberately does not report
 
-`GetStatus` reads `GetAll().Where(r => !r.Stale)` **once** and derives **two** lists from it, one filter apart: the cards and both reason lists take `!Retired`, the stage table does not. Nothing else diverges. See *The status panel invariant* in `CLAUDE.md`: any split beyond that one is how `FAILED` came to disagree w/ *failed*.
+`GetStatus` reads `GetAll().Where(r => !r.Stale)` **once** and derives **two** lists from it, one filter apart: the cards and both reason lists take `!Retired`, the stage table does not. Nothing else diverges.
+
+**The *downloaded* card counts survivors; the `Acquire` stage row counts fetches.** They are deliberately different numbers over the same rows and neither can be derived from the other: one target can buy and refuse several candidates, so the row reads the **ledger**, ¬the records. The row appears only while `AcquireMissingSubtitles` is on, exactly as `Convert` does for OCR. See *The status panel invariant* in `CLAUDE.md`: any split beyond that one is how `FAILED` came to disagree w/ *failed*.
 
 **`Retired` is the flag for a row the plugin closed itself** — a duplicate `SubtitleDeduplicator.Remove` deleted, and nothing else today. It leaves the cards ∵ the file is gone from the library; it stays on the stage table ∵ the removal happened and the table is a record of work. `Stale` now means only *discovery no longer offers this*. ! Before the split, `Remove` set `Stale` and the panel discarded **546** removals over three days while its *Duplicate removal* row showed 188 — which were the survivor **renames**, the only dedupe outcome that did ¬set the flag → K1, K2. `Canonicalize` no longer stamps a stage at all; it still saves the record, ∵ `RenamedFromPath`/`OutputPath` are set there and rollback needs them.
 

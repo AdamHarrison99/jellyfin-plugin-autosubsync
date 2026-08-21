@@ -44,6 +44,10 @@ Out of scope for **v1**, planned for later — see *Roadmap: the staged pipeline
 Each of those *manufactures* a subtitle rather than retiming one that exists, which is a real
 change in what the plugin is. `RM-SCOPE` in the roadmap is where that is argued.
 
+> **`RM-SCOPE` has since been reversed and Phase 10 has shipped, descoped to "nothing exists at
+> all".** The argument below stands and is what the descope answers; `agentic/plans/IDEA-ACQUIRE.md`
+> is the shaped feature and supersedes the Phase 10 spec.
+
 ---
 
 ## Upstream: what `assy-cli` actually gives us
@@ -323,7 +327,6 @@ public enum SubtitleProvenance
 {
     Retimed,     // v1: an existing user file we realigned in place. Rollback RESTORES a backup.
     Extracted,   // v1: pulled out of the container. Rollback DELETES; no original exists.
-    Downloaded,  // Phase 10. Rollback DELETES. Not regenerable without spending quota again.
     Ocr,         // Phase 8.  Rollback DELETES.
     Stripped     // Phase 9.  Rollback DELETES. Derived from another subtitle.
 }
@@ -336,6 +339,12 @@ sidecar stays, and a `Retimed` record treated as a creation deletes the user's o
 
 External `Overwrite` mode is the only path that produces `Retimed`. External `SideBySide` produces
 a new file the plugin owns, so it is `Extracted`-like in rollback terms — it deletes.
+
+> **A `Downloaded` value was specified here and is not implemented** (`AQ-Q4`). A download's rollback
+> verb is identical to a creation's — delete, no backup, no original — so it reuses `Created`, and a
+> fourth persisted value would have changed only a warning string. The quota cost is carried by the
+> rollback confirm text instead. What rollback cannot undo is the download itself, so a row that
+> bought candidates and placed nothing keeps its ledger through a rollback.
 
 ### Stages — one record, several operations
 
@@ -909,6 +918,11 @@ Two consequences that are easy to get wrong:
 
 - A dry run must still report *what it would have done* in numbers the user can act on — "would
   download 412 subtitles" is the entire point of running it before enabling Phase 10.
+  ! **As built it reports "would search", not "would download".** The gap count is knowable without
+  a network call; how many of those gaps a provider could fill is not, and neither is how many
+  candidates each would cost. A figure naming downloads would be invented. The dry-run row reads
+  *this language has no subtitle and would be searched for*, one per gap, and that is the number to
+  act on.
 - The pre-release audit's dry-run item has to be re-verified against the wider wording, not the
   original one. Tracing filesystem calls alone would pass a build that downloads during a dry run.
 
@@ -927,10 +941,20 @@ roadmap:   discover ─► convert ─► sync ─► transform ─► place
                        Phase 8    v1      Phase 9
 ```
 
-Phase 10 (`acquire`) is **withdrawn** — see its spec. Build order for what remains is **8 → 9**,
-forced rather than chosen: see `RM-ORDER`.
+Phase 10 (`acquire`) was **withdrawn** — see its spec — and has since **shipped**, at the descoped
+scope `RM-ORDER` names below. Build order for the rest is **8 → 9**, forced rather than chosen: see
+`RM-ORDER`.
 
 ### RM-SCOPE — decided: the plugin never obtains subtitles, only changes the ones present
+
+> **SUPERSEDED.** The user reversed this. The plugin does contact providers, through the provider
+> plugins the admin has already installed and credentialled — it ships no credential store and no
+> provider client of its own. Everything below stays as the argument the reversal had to answer,
+> and `agentic/plans/IDEA-ACQUIRE.md` is where it is answered: the feature acts **only** where a
+> wanted language has nothing at all, and keeps a candidate **only** where the plugin's own audio
+> check confirms it against the video. The Bazarr race in the paragraph below is what the
+> nothing-at-all scope removes — two tools cannot race over a gap that stops existing the moment
+> either fills it.
 
 v1 retimes subtitles that already exist. The three planned features each *manufacture* a subtitle
 that did not exist before — by fetching, by OCR, or by rewriting. Individually each looks like a
@@ -943,6 +967,11 @@ failures.
 **The decision: acquisition is out of scope permanently.** The plugin never contacts a subtitle
 provider. Downloading belongs to the OpenSubtitles plugin for Jellyfin, which already owns that
 problem. Phase 10 is withdrawn.
+
+> **Reversed.** The half that survives is *who owns the credentials and the quota*: the provider
+> plugins still do. This plugin holds no account, stores no key, and adds no downloader — it asks
+> `ISubtitleManager` for what the admin already installed. What it adds is the one thing no
+> downloader has: a candidate is kept only where the video's own audio confirms it.
 
 OCR and SDH stripping remain candidates — both operate on a track the user already has, and
 neither needs a credential store or a provider quota. They keep the manufacture-quality risk
@@ -962,6 +991,9 @@ download feature at all: replacing an image-based track **is** OCR, and replacin
 So Phase 10 cannot ship at its stated scope until 8 and 9 exist. The alternative is to descope it
 to "fetch only when nothing exists at all" and treat the upgrade rule as a fourth phase. Either is
 defensible; building 10 first and discovering this halfway through is not.
+
+> **The descope is what shipped**, and 8 and 9 had both landed by then. The feature acts only on a
+> wanted language with no subtitle at all; replacing a bad track is still not a download question.
 
 ---
 
@@ -1492,8 +1524,12 @@ Settle when the stage is built.
 
 ---
 
-### Phase 10 spec — download missing subtitles (`Acquire` stage) — WITHDRAWN
+### Phase 10 spec — download missing subtitles (`Acquire` stage) — WITHDRAWN, then shipped descoped
 
+> **SUPERSEDED by `agentic/plans/IDEA-ACQUIRE.md`**, which is the shaped feature and the only
+> description of what was built. Read it instead of this spec; the numbered steps 34–40 below are
+> retired and were not the shape that shipped.
+>
 > **Downloading is out of scope. This plugin modifies subtitles that already exist and fetches
 > nothing.** Acquisition is handled by the OpenSubtitles plugin for Jellyfin, which already owns
 > the credential store, the provider quotas, and the match quality. Adding a second downloader
@@ -1636,7 +1672,11 @@ Depends on Phase 8: the SeConv payload *is* the implementation. No stripper is w
     admin to tune two knobs whose failure mode is silent damage to their subtitles, with no way to
     preview the result. The single on/off switch stays; the detector decides the rest.
 
-### Phase 10 — Download missing subtitles (`Acquire`) — WITHDRAWN, steps 34–40 retired
+### Phase 10 — Download missing subtitles (`Acquire`) — retired; shipped per `IDEA-ACQUIRE.md`
+
+> Steps 34–40 stay retired. The feature that shipped shares none of their shape: no credential
+> store, no provider client, no persisted daily counter (`QuotaLimiter` was never built), and no
+> rule engine. What replaced them is one per-item download cap and the audio check.
 
 34. **Settle the Bazarr overlap story first.** Without an explicit "do not act if something else
     manages subtitles" rule this races another tool over the same files, and no amount of later
@@ -1963,3 +2003,8 @@ should manufacture subtitles at all, or stay a synchronizer. Phases 8–10 are s
 choice can be made against real costs, and none of them should start until it is. The measurement
 that most informs it is already available: the `Unsupported` count on the config page says how
 many tracks Phase 8 would rescue in this specific library.
+
+> **Made.** All three phases were built. `RM-SCOPE` was decided against acquisition and then
+> reversed, and the plugin now manufactures subtitles by all three routes — OCR, stripping, and
+> download. The line that replaced it is narrower and harder: **nothing unconfirmed by the video's
+> own audio is written**, whichever route produced it.

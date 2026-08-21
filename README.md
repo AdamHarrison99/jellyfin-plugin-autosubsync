@@ -11,13 +11,13 @@ they belong to, using a pinned build of
 - **Removes duplicate external subtitles** — same content and formatting, backed up first.
 - **Converts image-based subtitles to text** — PGS, VobSub, and DVB bitmaps, via OCR.
 - **Removes hearing-impaired tags** — `[door creaks]`, `(SIGHS)`, and speaker labels.
+- **Downloads subtitles for a language you have none in** — through your own provider plugins, and
+  only kept when the audio check confirms it.
 
 Runs nightly, on newly added items, or on demand, and remembers what it has done so the expensive
 first pass happens once.
 
-It does not fetch missing subtitles — pair it with the [Jellyfin OpenSubtitles
-Plugin](https://github.com/jellyfin/jellyfin-plugin-opensubtitles) for that — and it does not talk
-to the \*arr stack; it is a deliberately self-contained alternative to Bazarr.
+It does not talk to the \*arr stack; it is a deliberately self-contained alternative to Bazarr.
 
 ## Requirements
 
@@ -66,6 +66,11 @@ Every setting is explained on the settings page. In short:
 | Remove hearing-impaired tags | Off | Only on tracks that look hearing-impaired; a stripped track loses `sdh` from its name. |
 | Remove duplicate external subtitles | Off | Collapses external files of one language holding the same text and styling. Backed up first. |
 | Languages | *all* | e.g. `eng, spa` or `en, es`. Two- and three-letter forms mix freely. |
+| Download missing subtitles | Off | Only where a wanted language has nothing at all. Needs a subtitle provider plugin installed; **every candidate it tries spends your provider account's download allowance, including the ones the audio check rejects**. |
+| Maximum downloads per item | `3` | How many candidates one item may try before giving up on that language. `0` is unlimited, not off. |
+| Download even when the video has an embedded track | Off | On aims the feature at far more of your library — most items without a sidecar do have an embedded track. |
+| Accept hearing-impaired subtitles | Off | On makes them acceptable, never preferred. |
+| Additional download providers | *none* | Both a priority order and the way to tell the plugin an unrecognised provider can download. |
 | Where to write synced external subtitles | Overwrite | Replaces the file in place, always backing it up first. Side-by-side writes a new marked file. |
 | Concurrent syncs | `0` | Automatic: adds workers only while they help, never past half your cores. |
 | Synchronize new items as they are added | Off | Picks up what Jellyfin downloads without waiting for the nightly scan. |
@@ -93,6 +98,9 @@ Overwritten and removed subtitles are backed up in the plugin's data folder, not
 **Settings → Danger zone → Roll back everything** restores them and deletes what the plugin
 created. **Clear database** discards the index of those backups — the files stay on disk, but
 rollback can no longer find them.
+
+Subtitles the plugin downloaded are files it created, so rollback deletes them; replacing one costs
+another download from your provider account.
 
 ## Credits
 

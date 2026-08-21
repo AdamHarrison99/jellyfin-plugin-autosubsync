@@ -76,6 +76,25 @@ public static class LanguageCodes
         return trimmed.Contains('-', StringComparison.Ordinal) ? trimmed : Normalize(trimmed);
     }
 
+    // The two-letter form a provider may ask for, or null where the code has none.
+    public static string? TwoLetterForm(string? code)
+    {
+        if (Normalize(code) is not { } normalized)
+        {
+            return null;
+        }
+
+        try
+        {
+            var two = CultureInfo.GetCultureInfo(normalized).TwoLetterISOLanguageName;
+            return two.Length == 2 ? two : null;
+        }
+        catch (CultureNotFoundException)
+        {
+            return null;
+        }
+    }
+
     public static bool Matches(IReadOnlyCollection<string> allowList, string? language)
     {
         if (allowList.Count == 0)

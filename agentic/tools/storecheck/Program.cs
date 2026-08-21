@@ -68,6 +68,51 @@ Check("migration is idempotent", () =>
     Expect(records[0].Stages.Count == 1, "a second pass added a duplicate stage");
 });
 
+// A record written before downloading existed names no ledger at all.
+Check("a record from before this version carries an empty ledger", () =>
+{
+    foreach (var record in records)
+    {
+        Expect(record.AcquireAttempts is { Count: 0 }, "a v1 record arrived carrying a ledger");
+    }
+});
+
+Check("cloning a record deep-copies its ledger", () =>
+{
+    var record = new SyncRecord();
+    record.AcquireAttempts.Add(new AcquireAttempt
+    {
+        SubtitleId = "prov-1",
+        ProviderName = "Open Subtitles",
+        Outcome = AcquireAttemptOutcome.Misaligned
+    });
+
+    var clone = record.Clone();
+    clone.AcquireAttempts[0].ProviderName = "mutated";
+
+    Expect(
+        record.AcquireAttempts[0].ProviderName != "mutated",
+        "the clone shares its ledger with the original");
+});
+
+// ! The ledger is what stops the next scan buying a candidate this one already refused.
+Check("the ledger survives a reopen", () =>
+{
+    var record = Refused();
+    record.AcquireAttempts.Add(new AcquireAttempt
+    {
+        SubtitleId = "prov-9",
+        ProviderName = "subbuzz",
+        Outcome = AcquireAttemptOutcome.Misaligned
+    });
+
+    Expect(SyncStore.ReopenFailedIn(new List<SyncRecord> { record }) == 1, "the record was not reopened");
+    Expect(record.AcquireAttempts.Count == 1, "a reopen threw away what was already bought and refused");
+
+    SyncStore.Remeasure(new List<SyncRecord> { record });
+    Expect(record.AcquireAttempts.Count == 1, "a remeasure threw away what was already bought and refused");
+});
+
 Check("cloning a record deep-copies its stages", () =>
 {
     var clone = records[0].Clone();

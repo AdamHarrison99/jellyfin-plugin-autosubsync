@@ -6,6 +6,9 @@
 // Mutation: let Restore ignore RenamedFromPath. The renamed survivor then keeps the plugin's name
 // forever and the restored original lands beside it as a second file.
 
+// Mutation: drop the Spent test from RunAll. The ledger of refused candidates goes with the row,
+// and the next sweep buys every one of them a second time against the user's provider account.
+
 using Jellyfin.Plugin.AutoSubSync;
 using Jellyfin.Plugin.AutoSubSync.Configuration;
 using Jellyfin.Plugin.AutoSubSync.Data;
@@ -216,6 +219,73 @@ Check("a record whose restore failed keeps its row", () =>
 
     service.RollbackAll(Config());
     return store.GetAll().Count == 1 ? null : "the only pointer to the backup was dropped";
+});
+
+Console.WriteLine("Rollback of a downloaded subtitle");
+
+SyncRecord Attempted(AcquireAttemptOutcome outcome, string id)
+{
+    var record = new SyncRecord { ItemName = "Film", Origin = SubtitleOrigin.Acquired };
+    record.AcquireAttempts.Add(new AcquireAttempt
+    {
+        SubtitleId = id,
+        ProviderName = "Open Subtitles",
+        Outcome = outcome
+    });
+    return record;
+}
+
+// A download has no original behind it, so rollback deletes rather than restores.
+Check("a kept download is deleted like anything else the plugin created", () =>
+{
+    var (service, store, _) = Build();
+    var path = Write("bought.eng.autosubsync.srt", "a subtitle nobody had before");
+    var record = Attempted(AcquireAttemptOutcome.Kept, "prov-1");
+    record.Provenance = SubtitleProvenance.Created;
+    record.OutputPath = path;
+    store.Upsert(record);
+
+    var report = service.RollbackAll(Config());
+
+    if (report.Deleted != 1 || File.Exists(path))
+    {
+        return $"deleted {report.Deleted}, exists {File.Exists(path)}";
+    }
+
+    return store.GetAll().Count == 0 ? null : "the row survived the file it described";
+});
+
+Check("a download carrying the wrong name is refused, not deleted", () =>
+{
+    var (service, store, _) = Build();
+    var path = Write("bought-unmarked.eng.srt", "a file the plugin never wrote");
+    var record = Attempted(AcquireAttemptOutcome.Kept, "prov-2");
+    record.Provenance = SubtitleProvenance.Created;
+    record.OutputPath = path;
+    store.Upsert(record);
+
+    var report = service.RollbackAll(Config());
+    return report.Failed == 1 && File.Exists(path)
+        ? null : $"failed {report.Failed}, exists {File.Exists(path)}";
+});
+
+// ! Rollback undoes files. It cannot undo a download, and the ledger is the only record of one.
+Check("a row whose candidates were all refused keeps its row", () =>
+{
+    var (service, store, _) = Build();
+    var record = Attempted(AcquireAttemptOutcome.Misaligned, "prov-3");
+    record.Status = SyncStatus.Failed;
+    store.Upsert(record);
+
+    service.RollbackAll(Config());
+
+    var after = store.GetAll();
+    if (after.Count != 1)
+    {
+        return "the only record of what was already bought and refused was dropped";
+    }
+
+    return after[0].AcquireAttempts.Count == 1 ? null : "the row survived without its ledger";
 });
 
 try

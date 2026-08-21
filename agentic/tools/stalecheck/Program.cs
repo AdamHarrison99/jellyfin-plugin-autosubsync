@@ -17,6 +17,12 @@
 // video and outlives the sidecar deduplication deleted, so that row returns to the cards as
 // synced with no file behind it.
 
+// Mutation: drop the Downloaded clause from Reconcile. A download the plugin placed fills the very
+// gap that offered it, so the target is gone the next scan and the downloaded card empties itself.
+//
+// Mutation: make Downloaded true without testing the file. A download the user deleted then stays
+// on the card while the language it was bought for is empty again.
+
 using Jellyfin.Plugin.AutoSubSync;
 using Jellyfin.Plugin.AutoSubSync.Data;
 using Jellyfin.Plugin.AutoSubSync.Models;
@@ -467,6 +473,133 @@ Check("a retired row is not reopened by retry", () =>
     }
 
     return removed.Status == SyncStatus.Failed ? null : "a file the plugin deleted was queued again";
+});
+
+Console.WriteLine();
+Console.WriteLine("A downloaded subtitle, from the gap that bought it to the day it is deleted");
+
+// A language the item has nothing in. Discovery offers this until something fills it.
+SubtitleTarget Gap(string language)
+    => new()
+    {
+        ItemId = itemId,
+        ItemName = "Movie",
+        VideoPath = video,
+        Origin = SubtitleOrigin.Acquired,
+        Language = language,
+        Key = SubtitleTarget.AcquireKey(language)
+    };
+
+SyncRecord Bought(string language, string? output)
+{
+    var record = Record(SubtitleTarget.AcquireKey(language), SyncStatus.Synced);
+    record.Origin = SubtitleOrigin.Acquired;
+    record.Provenance = SubtitleProvenance.Created;
+    record.OutputPath = output;
+    record.RecordStage(SubtitleStageKind.Acquire, StageOutcome.Succeeded);
+    return record;
+}
+
+Check("a gap with nothing bought yet is left alone", () =>
+{
+    var (reconciler, store, _) = Build();
+    var record = Record(SubtitleTarget.AcquireKey("eng"), SyncStatus.Failed);
+    record.Origin = SubtitleOrigin.Acquired;
+    store.Upsert(record);
+
+    reconciler.Reconcile(itemId, [Gap("eng")]);
+
+    var after = store.GetById(record.Id);
+    if (after is null)
+    {
+        return "an offered gap was dropped";
+    }
+
+    return after.Stale ? "an offered gap was marked stale" : null;
+});
+
+// ! The one the whole clause exists for. Success is what stops the target being offered.
+Check("a download the plugin placed keeps counting", () =>
+{
+    var (reconciler, store, _) = Build();
+    var output = WriteFile("Movie (2011).eng.autosubsync.srt");
+    var record = Bought("eng", output);
+    store.Upsert(record);
+
+    // The placed file fills the language, so no acquire target is offered for it any more.
+    reconciler.Reconcile(itemId, []);
+
+    var after = store.GetById(record.Id);
+    if (after is null)
+    {
+        return "the row was dropped and rollback can never delete that file";
+    }
+
+    if (after.Stale)
+    {
+        return "a subtitle sitting in the library left the downloaded card";
+    }
+
+    return SyncOutcome.OnCards(after) ? null : "the download is no longer counted";
+});
+
+Check("a download the user deleted is offered again, not dropped", () =>
+{
+    var (reconciler, store, _) = Build();
+    var output = WriteFile("Movie (2011).spa.autosubsync.srt");
+    var record = Bought("spa", output);
+    store.Upsert(record);
+
+    File.Delete(output);
+
+    // The language is empty again, so discovery offers the gap a second time.
+    reconciler.Reconcile(itemId, [Gap("spa")]);
+
+    var after = store.GetById(record.Id);
+    if (after is null)
+    {
+        return "the row rollback needs was dropped";
+    }
+
+    return after.Stale ? "the returning gap was not counted" : null;
+});
+
+Check("a deleted download nobody wants any more stops counting", () =>
+{
+    var (reconciler, store, _) = Build();
+    var output = WriteFile("Movie (2011).fre.autosubsync.srt");
+    var record = Bought("fre", output);
+    store.Upsert(record);
+
+    File.Delete(output);
+
+    // Downloading turned off: no gap is offered and no file answers the row.
+    reconciler.Reconcile(itemId, []);
+
+    var after = store.GetById(record.Id);
+    if (after is null)
+    {
+        return null;
+    }
+
+    return after.Stale ? null : "a download that is gone is still counted";
+});
+
+Check("a download in a library that left scope stops counting", () =>
+{
+    var (reconciler, store, _) = Build();
+    var record = Bought("eng", WriteFile("Movie (2011).eng.2.autosubsync.srt"));
+    store.Upsert(record);
+
+    reconciler.MarkOutOfScope([Guid.NewGuid()]);
+
+    var after = store.GetById(record.Id);
+    if (after is null)
+    {
+        return "the row was dropped";
+    }
+
+    return after.Stale ? null : "an item outside the enabled libraries is still counted";
 });
 
 try

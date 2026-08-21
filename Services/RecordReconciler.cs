@@ -37,7 +37,8 @@ public class RecordReconciler
         foreach (var record in _store.GetByItemId(itemId))
         {
             var offered = keys.Contains(record.TargetKey)
-                || (record.OutputPath is not null && paths.Contains(record.OutputPath));
+                || (record.OutputPath is not null && paths.Contains(record.OutputPath))
+                || Downloaded(record);
 
             // ! Never restamped Stale. Reopened by the removed file itself, not by its target key.
             if (record.Retired)
@@ -82,6 +83,13 @@ public class RecordReconciler
 
         Drop(drop);
     }
+
+    // ! A download stops being offered the moment its own file fills the language it bought.
+    //   The row names a subtitle that is in the library, so the offer cannot decide it.
+    private static bool Downloaded(SyncRecord record)
+        => record.Origin == SubtitleOrigin.Acquired
+           && record.OutputPath is { } path
+           && File.Exists(path);
 
     // Records for items outside the enabled libraries.
     public void MarkOutOfScope(IEnumerable<Guid> inScope)

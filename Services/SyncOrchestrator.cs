@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using Jellyfin.Plugin.AutoSubSync.Cli;
 using Jellyfin.Plugin.AutoSubSync.Configuration;
 using Jellyfin.Plugin.AutoSubSync.Data;
@@ -23,13 +23,6 @@ public class SyncOrchestrator
     // Under this the engine did nothing worth writing a file for.
     private const int MinimumMovementMs = 100;
 
-    // ! Cannot-align scores ≈10 a second, can-align 40 and up. Set at the lowest real reading:
-    //   an unmeasurable title must clear what a genuine alignment scores.
-    private const double MinimumEngineScore = 40;
-
-    // Ceiling on a move nothing verified. Only reachable with audio confirmation turned off.
-    private const long MaximumUnverifiedShiftMs = 60_000;
-
     private readonly IAssyCliRunner _runner;
     private readonly ISubtitleExtractor _extractor;
     private readonly ImageSubtitleExtractor _imageExtractor;
@@ -43,6 +36,7 @@ public class SyncOrchestrator
     private readonly IApplicationPaths _applicationPaths;
     private readonly SyncVerifier _verifier;
     private readonly SubtitlePlacer _placer;
+    private readonly SubtitleAcquirer _acquirer;
     private readonly VobSubStaging _vobSub;
     private readonly ILogger<SyncOrchestrator> _logger;
 
@@ -60,6 +54,7 @@ public class SyncOrchestrator
         IFileSystem fileSystem,
         IApplicationPaths applicationPaths,
         SubtitlePlacer placer,
+        SubtitleAcquirer acquirer,
         VobSubStaging vobSub,
         ILogger<SyncOrchestrator> logger)
     {
@@ -77,6 +72,7 @@ public class SyncOrchestrator
         _providerManager = providerManager;
         _fileSystem = fileSystem;
         _placer = placer;
+        _acquirer = acquirer;
         _logger = logger;
     }
 
@@ -120,12 +116,28 @@ public class SyncOrchestrator
             // ! Must stay ahead of all filesystem work.
             if (config.DryRunMode)
             {
+                // ! A search is a network request under the admin's account. Dry run makes none.
+                var acquiring = target.Origin == SubtitleOrigin.Acquired;
                 record.Status = SyncStatus.DryRun;
-                record.Message = "Dry run: this subtitle would be synced.";
-                _logger.LogInformation(
-                    "DRY RUN: would sync {Origin} subtitle for {Item}",
-                    target.Origin,
-                    target.ItemName);
+                record.Message = acquiring
+                    ? "Dry run: this language has no subtitle and would be searched for."
+                    : "Dry run: this subtitle would be synced.";
+
+                if (acquiring)
+                {
+                    _logger.LogInformation(
+                        "DRY RUN: would search for a {Language} subtitle for {Item}",
+                        target.Language,
+                        target.ItemName);
+                }
+                else
+                {
+                    _logger.LogInformation(
+                        "DRY RUN: would sync {Origin} subtitle for {Item}",
+                        target.Origin,
+                        target.ItemName);
+                }
+
                 SafeUpsert(record);
                 return record;
             }
@@ -252,6 +264,12 @@ public class SyncOrchestrator
 
             // ! Must precede every stage that can fail. IsExhausted needs this on a failed record.
             CaptureFingerprint(record, target, target.SubtitlePath);
+
+            if (target.Origin == SubtitleOrigin.Acquired)
+            {
+                return await RunAcquireAsync(target, record, config, scratch, cancellationToken)
+                    .ConfigureAwait(false);
+            }
 
             if (SettledTwin(record, target, config) is { } twin)
             {
@@ -448,179 +466,40 @@ public class SyncOrchestrator
 
             record.RecordStage(SubtitleStageKind.Verify, StageFor(verdict.Verdict));
 
-            if (verdict.Verdict == SyncVerdict.Misaligned)
+            // ! The gates live in SyncDecisionMaker. The log line for each branch stays here,
+            //   spelled exactly as the field-log tools read it.
+            var decision = SyncDecisionMaker.Decide(
+                verdict,
+                change,
+                () => EngineConfidence(attempt),
+                _logger.IsEnabled(LogLevel.Debug),
+                config);
+
+            if (!decision.Accepted)
             {
                 TryDelete(attempt.ProducedPath);
-
-                var drifting = verdict.DriftMs is { } spread
-                    && Math.Abs(spread) > SyncVerifier.DriftWithinMs;
-
-                // ! Signed. The retroactivity hook reads it against a bound centred on the
-                //   authored lead, and a magnitude cannot be judged against that.
-                var miss = drifting ? verdict.DriftMs!.Value : verdict.BestShiftMs ?? 0;
-
-                _logger.LogWarning(
-                    "Rejected the sync for {Item} ({Key}): {Miss} ms off the speech, drifting {Drifting}, "
-                    + "{Windows} windows, peak {Strength:F2}x",
-                    target.ItemName,
-                    target.Key,
-                    miss,
-                    drifting,
-                    verdict.Windows,
-                    verdict.Strength);
+                LogRefusal(target, verdict, decision);
 
                 return Fail(
                     record,
-                    drifting
-                        ? "Rejected: the audio check found the offset drifting across the runtime."
-                        : "Rejected: the audio check found the subtitle out of alignment.",
-                    miss,
+                    decision.Message,
+                    decision.RejectedOffsetMs,
                     SubtitleStageKind.Verify);
             }
 
-            // ! Drift goes unmeasured on an Inconclusive verdict and on any title too short for
-            //   six windows. Hold an unchecked stretch to the tolerance the check applies.
-            if (verdict.DriftMs is null
-                && change.DriftMs is { } stretch
-                && Math.Abs(stretch) > SyncVerifier.DriftWithinMs)
+            if (decision.Kind == SyncDecisionKind.AcceptStretchReleased)
             {
-                if (!SyncVerifier.ReleasedByCoarseDrift(verdict))
-                {
-                    TryDelete(attempt.ProducedPath);
-
-                    _logger.LogWarning(
-                        "Rejected the sync for {Item} ({Key}): it stretches the subtitle by {Drift} ms "
-                        + "across the runtime and the audio check never measured drift ({Windows} windows)",
-                        target.ItemName,
-                        target.Key,
-                        stretch,
-                        verdict.Windows);
-
-                    // ! Two reasons, not one. A title too short to plan six windows can never be
-                    //   measured; one that planned them and reached no fit is a different refusal.
-                    var tooShort = verdict.Windows < SyncVerifier.DriftWindows;
-
-                    return Fail(
-                        record,
-                        tooShort
-                            ? "Rejected: the sync engine rescaled the subtitle across the runtime — this "
-                              + "title is too short for the audio check to measure drift."
-                            : "Rejected: the sync engine rescaled the subtitle across the runtime — the "
-                              + "audio check could not measure drift on this title.",
-                        stretch,
-                        SubtitleStageKind.Verify);
-                }
-
                 _logger.LogInformation(
                     "Released the sync for {Item} ({Key}): it stretches the subtitle by {Drift} ms "
                     + "and the audio check reads {Coarse} ms of drift over {Windows} windows",
                     target.ItemName,
                     target.Key,
-                    stretch,
+                    change.DriftMs,
                     verdict.CoarseDriftMs,
                     verdict.Windows);
             }
 
-            // ! Backstop for a check that confirmed nothing. not a tight leash: reaching here means
-            //   audio confirmation is off, and a sidecar for another release is legitimately late.
-            if (verdict.Verdict == SyncVerdict.Inconclusive
-                && change.ConstantMs is { } shift
-                && Math.Abs(shift) > MaximumUnverifiedShiftMs)
-            {
-                TryDelete(attempt.ProducedPath);
-
-                _logger.LogWarning(
-                    "Rejected the sync for {Item} ({Key}): it moves the subtitle {Shift} ms and the "
-                    + "audio check confirmed nothing",
-                    target.ItemName,
-                    target.Key,
-                    shift);
-
-                return Fail(
-                    record,
-                    "Rejected: the audio check reached no verdict and the sync engine moved the "
-                    + "subtitle too far to accept unconfirmed.",
-                    shift,
-                    SubtitleStageKind.Verify);
-            }
-
-            // ! Costs a parse of the produced file, so only where the gate below reads it or the
-            //   debug line below reports it.
-            var confidence = verdict.Verdict == SyncVerdict.Inconclusive
-                || _logger.IsEnabled(LogLevel.Debug)
-                    ? EngineConfidence(attempt)
-                    : null;
-
-            // ! Only where our own check could not measure the title, and only to refuse. The
-            //   engine scoring its own alignment is not evidence that it is right.
-            if (verdict.Verdict == SyncVerdict.Inconclusive)
-            {
-                // ! The check ran and returned no answer, which is not the same as a pass. Where
-                //   confirmation is required that ends it, and the engine's score is not consulted.
-                if (config.RequireAudioConfirmation)
-                {
-                    TryDelete(attempt.ProducedPath);
-
-                    // ! The three numbers separate the gates: hits under the floor is a title
-                    //   whose audio yielded too little, a low peak is a flat sweep.
-                    _logger.LogWarning(
-                        "Rejected the sync for {Item} ({Key}): the audio check could not confirm it "
-                        + "({Windows} windows, peak {Strength:F2}x, {Hits} hits against a floor of "
-                        + "{Floor}, {Onsets} onsets)",
-                        target.ItemName,
-                        target.Key,
-                        verdict.Windows,
-                        verdict.Strength,
-                        verdict.Hits,
-                        verdict.Floor,
-                        verdict.Onsets);
-
-                    return Fail(
-                        record,
-                        SyncOutcome.NoVerdictRefusal,
-                        null,
-                        SubtitleStageKind.Verify);
-                }
-
-                if (confidence is not { } tooLow)
-                {
-                    TryDelete(attempt.ProducedPath);
-
-                    _logger.LogWarning(
-                        "Rejected the sync for {Item} ({Key}): the audio check could not measure it "
-                        + "and the engine never scored its own alignment",
-                        target.ItemName,
-                        target.Key);
-
-                    return Fail(
-                        record,
-                        "Rejected: the audio check could not measure this title and the sync engine "
-                        + "never scored its alignment.",
-                        null,
-                        SubtitleStageKind.Verify);
-                }
-
-                if (tooLow < MinimumEngineScore)
-                {
-                    TryDelete(attempt.ProducedPath);
-
-                    _logger.LogWarning(
-                        "Rejected the sync for {Item} ({Key}): the audio check could not measure it "
-                        + "and the engine scored its own alignment at {Confidence:F1} a second",
-                        target.ItemName,
-                        target.Key,
-                        tooLow);
-
-                    return Fail(
-                        record,
-                        "Rejected: the audio check could not measure this title and the sync engine "
-                        + "found no usable alignment.",
-                        null,
-                        SubtitleStageKind.Verify);
-                }
-            }
-
-            if (confidence is { } accepted)
+            if (decision.EngineScore is { } accepted)
             {
                 _logger.LogDebug(
                     "Verify passed for {Item} ({Key}): {Verdict}, {Windows} windows, peak "
@@ -632,6 +511,7 @@ public class SyncOrchestrator
                     verdict.Strength,
                     accepted);
             }
+
 
             var finalPath = config.RemoveHearingImpairedTags
                 ? await TransformAsync(target, record, attempt.ProducedPath, scratch, cancellationToken)
@@ -685,6 +565,241 @@ public class SyncOrchestrator
                 TryDelete(path);
             }
         }
+    }
+
+    // The acquire path: buy a candidate, judge it, keep the first one the audio confirms.
+    private async Task<SyncRecord> RunAcquireAsync(
+        SubtitleTarget target,
+        SyncRecord record,
+        PluginConfiguration config,
+        List<string> scratch,
+        CancellationToken cancellationToken)
+    {
+        var started = Stopwatch.StartNew();
+
+        var outcome = await _acquirer
+            .RunAsync(
+                target,
+                record,
+                config,
+                extension => Track(scratch, ScratchPath(extension))!,
+                (path, ct) => JudgeCandidateAsync(target, record, config, path, scratch, ct),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        switch (outcome.Result)
+        {
+            case AcquireResult.Kept:
+                SafeUpsert(record, SubtitleStageKind.Verify);
+                break;
+
+            // The judge already stamped the refusal the shared gates produced.
+            case AcquireResult.Abstained:
+                break;
+
+            case AcquireResult.Exhausted:
+            case AcquireResult.CapReached:
+                Fail(
+                    record,
+                    outcome.Message,
+                    record.RejectedOffsetMs,
+                    outcome.RefusedByAudio ? SubtitleStageKind.Verify : SubtitleStageKind.Sync);
+                break;
+
+            // ! Set aside, never unsupported. Nothing was bought and no track went unread.
+            default:
+                record.Status = SyncStatus.SetAside;
+                record.Message = outcome.Message;
+                record.RefusedByAudio = false;
+                record.RejectedOffsetMs = null;
+                record.AppliedOffsetMs = null;
+                SafeUpsert(record, SubtitleStageKind.Acquire);
+                break;
+        }
+
+        StampAcquire(record, outcome, started.ElapsedMilliseconds);
+
+        if (outcome.Result == AcquireResult.Kept && config.RefreshItemAfterSync)
+        {
+            QueueRefresh(target.ItemId);
+        }
+
+        return record;
+    }
+
+    // ! Written last. SafeUpsert stamps this row off the record status, which carries neither
+    //   the confidence nor the time the searches took.
+    private void StampAcquire(SyncRecord record, AcquireOutcome outcome, long elapsedMs)
+    {
+        var stage = record.RecordStage(SubtitleStageKind.Acquire, StageFor(outcome.Result));
+        stage.ElapsedMs = elapsedMs;
+        stage.Confidence = outcome.Confidence;
+        stage.Message = outcome.Message ?? record.Message;
+
+        try
+        {
+            _store.Upsert(record);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to record the acquire result for {Item}", record.ItemName);
+        }
+    }
+
+    internal static StageOutcome StageFor(AcquireResult result)
+        => result switch
+        {
+            AcquireResult.Kept => StageOutcome.Succeeded,
+            AcquireResult.Exhausted or AcquireResult.CapReached or AcquireResult.Abstained
+                => StageOutcome.Failed,
+            _ => StageOutcome.Skipped
+        };
+
+    // One fetched candidate, from the audio check to placement.
+    private async Task<CandidateVerdict> JudgeCandidateAsync(
+        SubtitleTarget target,
+        SyncRecord record,
+        PluginConfiguration config,
+        string candidatePath,
+        List<string> scratch,
+        CancellationToken cancellationToken)
+    {
+        var starts = SyncVerifier.Starts(candidatePath);
+        var sample = starts is not null
+            ? await _verifier.SampleAsync(target.VideoPath, starts, cancellationToken).ConfigureAwait(false)
+            : null;
+
+        if (sample is not null && starts is not null)
+        {
+            var before = SyncVerifier.Score(sample, starts);
+            record.RecordStage(SubtitleStageKind.Verify, StageFor(before.Verdict));
+
+            // ! Inverted against the sync path. A download the check already agrees with is the
+            //   result, and an engine run on it can only move a correct file.
+            if (before is { Verdict: SyncVerdict.Aligned, BestShiftMs: { } sits })
+            {
+                _logger.LogInformation(
+                    "Confirmed {Item} ({Key}): the downloaded subtitle sits {Sits} ms from the "
+                    + "speech, {Windows} windows, peak {Strength:F2}x",
+                    target.ItemName,
+                    target.Key,
+                    sits,
+                    before.Windows,
+                    before.Strength);
+
+                return await KeepAsync(target, record, config, candidatePath, null, scratch, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+
+        var attempt = await RunEngineAsync(target, record, candidatePath, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (attempt.ProducedPath is null)
+        {
+            Fail(record, attempt.Message);
+            return CandidateVerdict.Failed;
+        }
+
+        Track(scratch, attempt.ProducedPath);
+        var change = SubtitleOffsetProbe.Measure(candidatePath, attempt.ProducedPath);
+
+        if (change.RateRatio is { } ratio && Math.Abs(ratio - 1) > MaximumRateDrift)
+        {
+            TryDelete(attempt.ProducedPath);
+            Fail(
+                record,
+                "Failed: the sync engine rescaled the subtitle by a factor that matches "
+                + "no known framerate conversion.");
+            return CandidateVerdict.Misaligned;
+        }
+
+        // ! No minimum-movement exit. There is no original to fall back on, so a download the
+        //   engine barely touched is confirmed like any other and kept or refused on that.
+        var verdict = sample is not null && SyncVerifier.Starts(attempt.ProducedPath) is { } placed
+            ? await _verifier
+                .ScoreAsync(target.VideoPath, sample, placed, cancellationToken)
+                .ConfigureAwait(false)
+            : await _verifier
+                .VerifyAsync(target.VideoPath, attempt.ProducedPath, cancellationToken)
+                .ConfigureAwait(false);
+
+        record.RecordStage(SubtitleStageKind.Verify, StageFor(verdict.Verdict));
+
+        var decision = SyncDecisionMaker.Decide(
+            verdict,
+            change,
+            () => EngineConfidence(attempt),
+            _logger.IsEnabled(LogLevel.Debug),
+            config);
+
+        if (!decision.Accepted)
+        {
+            TryDelete(attempt.ProducedPath);
+            LogRefusal(target, verdict, decision);
+            Fail(record, decision.Message, decision.RejectedOffsetMs, SubtitleStageKind.Verify);
+
+            // ! The verdict decides, not the branch. An abstention describes the audio of this
+            //   video, so the next candidate would only buy a second one.
+            return verdict.Verdict == SyncVerdict.Inconclusive
+                ? CandidateVerdict.Inconclusive
+                : CandidateVerdict.Misaligned;
+        }
+
+        return await KeepAsync(
+                target,
+                record,
+                config,
+                attempt.ProducedPath,
+                change.ConstantMs,
+                scratch,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    // Strips if asked, writes the file into the library, and closes the record on it.
+    private async Task<CandidateVerdict> KeepAsync(
+        SubtitleTarget target,
+        SyncRecord record,
+        PluginConfiguration config,
+        string keptPath,
+        long? appliedMs,
+        List<string> scratch,
+        CancellationToken cancellationToken)
+    {
+        var finalPath = config.RemoveHearingImpairedTags
+            ? await TransformAsync(target, record, keptPath, scratch, cancellationToken).ConfigureAwait(false)
+            : keptPath;
+
+        var placement = _placer.Place(target, record, finalPath, config);
+
+        if (placement is null)
+        {
+            TryDelete(finalPath);
+            Fail(record, "Failed: the downloaded subtitle could not be written into the library.");
+            return CandidateVerdict.Failed;
+        }
+
+        record.OutputPath = placement.OutputPath;
+        record.BackupPath = placement.BackupPath;
+        record.Provenance = placement.Provenance;
+        record.Status = SyncStatus.Synced;
+        record.AppliedOffsetMs = appliedMs;
+        record.RejectedOffsetMs = null;
+        record.RefusedByAudio = false;
+        record.SkippedMovementMs = null;
+        record.AlignedAtMs = null;
+        record.Message = null;
+
+        _logger.LogInformation(
+            "Wrote a downloaded subtitle for {Item} ({Key}): shifted {Shift}, {Elapsed}ms, {Path}",
+            target.ItemName,
+            target.Key,
+            Describe(appliedMs),
+            record.ElapsedMs,
+            placement.OutputPath);
+
+        return CandidateVerdict.Kept;
     }
 
     // OCR: turns a bitmap track into text an alignment engine can read.
@@ -1110,7 +1225,14 @@ public class SyncOrchestrator
            && SettingsUnchanged(record, config)
            && !MinimumWouldNowSync(record, config)
            && !ToleranceWouldNowSync(record, config)
-           && FingerprintMatches(record, target, subtitlePath);
+           && FingerprintMatches(record, target, subtitlePath)
+           && AcquiredOutputSurvives(record, target);
+
+    // ! An acquire target is offered only for an empty slot. Its own output still on disk is
+    //   the one signal that the slot is filled and the library has not caught up yet.
+    private static bool AcquiredOutputSurvives(SyncRecord record, SubtitleTarget target)
+        => target.Origin != SubtitleOrigin.Acquired
+           || (record.OutputPath is { } path && File.Exists(path));
 
     // ! The engine ran already. Identical inputs fail identically; only a change retries.
     internal static bool IsExhausted(SyncRecord record, SubtitleTarget target, PluginConfiguration config)
@@ -1154,8 +1276,8 @@ public class SyncOrchestrator
             return false;
         }
 
-        // The video hash already covers an embedded track.
-        if (target.Origin == SubtitleOrigin.Embedded)
+        // The video hash is the whole fingerprint where the target has no source file.
+        if (target.Origin is SubtitleOrigin.Embedded or SubtitleOrigin.Acquired)
         {
             return true;
         }
@@ -1212,6 +1334,77 @@ public class SyncOrchestrator
         LogOutcome(record);
         SafeUpsert(record, kind);
         return record;
+    }
+
+    // ! One line per refusing branch, worded as the field-log tools match them.
+    private void LogRefusal(SubtitleTarget target, VerificationResult verdict, SyncDecision decision)
+    {
+        switch (decision.Kind)
+        {
+            case SyncDecisionKind.Misaligned:
+                _logger.LogWarning(
+                    "Rejected the sync for {Item} ({Key}): {Miss} ms off the speech, drifting {Drifting}, "
+                    + "{Windows} windows, peak {Strength:F2}x",
+                    target.ItemName,
+                    target.Key,
+                    decision.RejectedOffsetMs ?? 0,
+                    verdict.DriftMs is { } spread && Math.Abs(spread) > SyncVerifier.DriftWithinMs,
+                    verdict.Windows,
+                    verdict.Strength);
+                return;
+
+            case SyncDecisionKind.UnmeasuredStretch:
+                _logger.LogWarning(
+                    "Rejected the sync for {Item} ({Key}): it stretches the subtitle by {Drift} ms "
+                    + "across the runtime and the audio check never measured drift ({Windows} windows)",
+                    target.ItemName,
+                    target.Key,
+                    decision.RejectedOffsetMs ?? 0,
+                    verdict.Windows);
+                return;
+
+            case SyncDecisionKind.UnverifiedShift:
+                _logger.LogWarning(
+                    "Rejected the sync for {Item} ({Key}): it moves the subtitle {Shift} ms and the "
+                    + "audio check confirmed nothing",
+                    target.ItemName,
+                    target.Key,
+                    decision.RejectedOffsetMs ?? 0);
+                return;
+
+            case SyncDecisionKind.NoVerdict:
+                // ! The three numbers separate the gates: hits under the floor is a title
+                //   whose audio yielded too little, a low peak is a flat sweep.
+                _logger.LogWarning(
+                    "Rejected the sync for {Item} ({Key}): the audio check could not confirm it "
+                    + "({Windows} windows, peak {Strength:F2}x, {Hits} hits against a floor of "
+                    + "{Floor}, {Onsets} onsets)",
+                    target.ItemName,
+                    target.Key,
+                    verdict.Windows,
+                    verdict.Strength,
+                    verdict.Hits,
+                    verdict.Floor,
+                    verdict.Onsets);
+                return;
+
+            case SyncDecisionKind.NoEngineScore:
+                _logger.LogWarning(
+                    "Rejected the sync for {Item} ({Key}): the audio check could not measure it "
+                    + "and the engine never scored its own alignment",
+                    target.ItemName,
+                    target.Key);
+                return;
+
+            case SyncDecisionKind.LowEngineScore:
+                _logger.LogWarning(
+                    "Rejected the sync for {Item} ({Key}): the audio check could not measure it "
+                    + "and the engine scored its own alignment at {Confidence:F1} a second",
+                    target.ItemName,
+                    target.Key,
+                    decision.EngineScore ?? 0);
+                return;
+        }
     }
 
     // ! A refusal is not a tool failure, and the status panel already counts them apart. Lead the
