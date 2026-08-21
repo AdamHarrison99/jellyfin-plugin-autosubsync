@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.6.1.0",
+        "changelog": "Cuts what the download feature spends on subtitles it always discards. A candidate a provider names as hearing-impaired is now skipped before it costs a download, and a name saying the annotations have been removed is no longer mistaken for one. An item whose whole download budget went on hearing-impaired files it discarded is reported as a skip rather than as a failure of the audio check, which never saw them. Once an item has spent its download limit for a language it no longer buys a fresh budget on every scan; raising the limit is what lets it try again, and candidates already tried are still never bought twice. Hearing-impaired detection now logs how many cues were marked out of the total.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-autosubsync/releases/download/v1.6.1.0/autosubsync-v1.6.1.0.zip",
+        "checksum": "6fbf79713b7fc0e76f4050635468f1f3",
+        "timestamp": "2026-08-21T15:42:13Z"
+      },
+      {
         "version": "1.6.0.0",
         "changelog": "The plugin can now download a subtitle for a language an item has none of at all, using the subtitle provider plugins you already have installed and credentialled. It adds no provider and stores no account of its own. A downloaded subtitle is kept only when the audio check confirms it against the video's own audio; anything it will not confirm is discarded before it reaches your library, so an item can spend a download and still end up with nothing. Downloading is off by default and does nothing until you list the languages you want. New settings cover a per-item download limit, whether an embedded track counts as already covered, whether hearing-impaired subtitles are acceptable, and the order your providers are asked in. The settings page reports whether a download provider is installed and flags a provider name that matches nothing. Rollback deletes downloaded subtitles like anything else the plugin created, and keeps its record of candidates already tried and refused so they are not bought a second time.",
         "targetAbi": "10.11.0.0",

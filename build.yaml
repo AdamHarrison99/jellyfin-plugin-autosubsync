@@ -1,6 +1,6 @@
 name: "AutoSubSync"
 guid: "6dbc32c5-1c68-481e-b066-9521552a2615"
-version: "1.6.0.0"
+version: "1.6.1.0"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 overview: "Automatically synchronizes external and embedded subtitles across your library, and can download one where a wanted language has none."
@@ -19,13 +19,9 @@ owner: "AdamHarrison99"
 artifacts:
   - "Jellyfin.Plugin.AutoSubSync.dll"
 changelog: |
-  - Downloads a subtitle when a wanted language has none at all, through the subtitle provider
-    plugins you already have installed
-  - A downloaded subtitle is kept only when the audio check confirms it against the video; anything
-    unconfirmed is discarded and never reaches your library
-  - New Download settings: a per-item download limit, whether an embedded track counts as covered,
-    whether hearing-impaired subtitles are acceptable, and a provider priority list
-  - The settings page reports whether a download provider is installed, and flags a provider name
-    that matches nothing
-  - Rollback deletes downloaded subtitles, and keeps the record of candidates already tried and
-    refused so they are not bought again
+  - Skips a candidate a provider names as hearing-impaired before it costs a download
+  - An item whose whole download budget went on discarded hearing-impaired subtitles is
+    reported as a skip, not as a failure of the audio check
+  - An item that has spent its download limit no longer buys a fresh budget on every scan;
+    raising the limit is what lets it try again
+  - Hearing-impaired detection logs how many cues were marked out of the total
