@@ -57,7 +57,8 @@ public class FullLibrarySyncTask : IScheduledTask
         _logger = logger;
     }
 
-    public string Name => "Full Library Sync";
+    // ! The dashboard lists every plugin's tasks together. The key is what the page looks up.
+    public string Name => "AutoSubSync - Full Library Sync";
 
     public string Key => "AutoSubSyncFullLibrarySync";
 
