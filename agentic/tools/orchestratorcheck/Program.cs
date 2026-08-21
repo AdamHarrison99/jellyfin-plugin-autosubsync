@@ -14,7 +14,10 @@
 //   - Decide falling through Inconclusive to Accept        -> unverified subtitles get written
 //   - AcquiredOutputSurvives always true                   -> a deleted download is never replaced
 //   - AcquiredOutputSurvives dropped from IsStillCurrent   -> the same file is bought every night
+//   - BudgetSpent counting this run instead of the ledger  -> a set-aside row buys a fresh budget
+//   - BudgetSpent dropping its SetAside test               -> a kept download is never re-checked
 
+using System.Globalization;
 using Jellyfin.Plugin.AutoSubSync.Configuration;
 using Jellyfin.Plugin.AutoSubSync.Data;
 using Jellyfin.Plugin.AutoSubSync.Models;
@@ -458,6 +461,47 @@ void AcquireGates()
     });
 
     Console.WriteLine();
+    Console.WriteLine("What stops a set-aside row buying a fresh budget?");
+
+    // ! A set-aside row is never exhausted, so nothing else bounds what it spends over time.
+    Check("a set-aside row that spent the limit is parked", () =>
+        SyncOrchestrator.BudgetSpent(SetAside(3), Config())
+            ? null
+            : "a spent budget would buy three more on the next scan");
+
+    Check("a set-aside row under the limit still searches", () =>
+        SyncOrchestrator.BudgetSpent(SetAside(2), Config())
+            ? "a row with budget left was parked"
+            : null);
+
+    // ! The only release there is. Retry failed subtitles reopens Failed rows alone.
+    Check("raising the limit releases a parked row", () =>
+        SyncOrchestrator.BudgetSpent(SetAside(3), new PluginConfiguration { MaxDownloadsPerItem = 6 })
+            ? "raising the limit left the row parked"
+            : null);
+
+    Check("an unlimited budget never parks a row", () =>
+        SyncOrchestrator.BudgetSpent(SetAside(9), new PluginConfiguration { MaxDownloadsPerItem = 0 })
+            ? "an unlimited budget was treated as spent"
+            : null);
+
+    // ! A suppressed track is set aside too, and it has never bought anything.
+    Check("a suppression is not a spent budget", () =>
+        SyncOrchestrator.BudgetSpent(SetAside(0), Config())
+            ? "a track a setting declined to process was parked as if it had downloaded"
+            : null);
+
+    Check("a kept download is not parked by its own ledger", () =>
+    {
+        var (record, _) = Acquired();
+        record.AcquireAttempts.Add(new AcquireAttempt { Outcome = AcquireAttemptOutcome.Kept });
+
+        return SyncOrchestrator.BudgetSpent(record, new PluginConfiguration { MaxDownloadsPerItem = 1 })
+            ? "a synced row was parked and would never be checked again"
+            : null;
+    });
+
+    Console.WriteLine();
     Console.WriteLine("Where does an acquire outcome land on the panel?");
 
     // ! The set-aside family is on no card. Failing them fills the panel with one fact.
@@ -499,6 +543,23 @@ void AcquireGates()
             ? null
             : "a kept download was not a success";
     });
+}
+
+// A row the acquire path set aside, carrying the downloads it already paid for.
+static SyncRecord SetAside(int paid)
+{
+    var record = new SyncRecord { Status = SyncStatus.SetAside };
+
+    for (var i = 0; i < paid; i++)
+    {
+        record.AcquireAttempts.Add(new AcquireAttempt
+        {
+            SubtitleId = i.ToString(CultureInfo.InvariantCulture),
+            Outcome = AcquireAttemptOutcome.HearingImpaired
+        });
+    }
+
+    return record;
 }
 
 // A downloaded subtitle this plugin placed, with no source file behind it.

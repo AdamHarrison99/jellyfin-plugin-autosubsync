@@ -26,6 +26,7 @@
     <Compile Include="..\..\..\Subtitles\ISubtitleSource.cs" Link="ISubtitleSource.cs" />
     <Compile Include="..\..\..\Subtitles\LanguageCodes.cs" Link="LanguageCodes.cs" />
     <Compile Include="..\..\..\Subtitles\SdhDetector.cs" Link="SdhDetector.cs" />
+    <Compile Include="..\..\..\Subtitles\SdhNaming.cs" Link="SdhNaming.cs" />
     <Compile Include="..\..\..\Subtitles\SubtitleContent.cs" Link="SubtitleContent.cs" />
     <Compile Include="..\..\..\Subtitles\SubtitleDiscoveryService.cs" Link="SubtitleDiscoveryService.cs" />
     <Compile Include="..\..\..\Subtitles\SubtitleNaming.cs" Link="SubtitleNaming.cs" />

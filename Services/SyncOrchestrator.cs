@@ -113,6 +113,17 @@ public class SyncOrchestrator
                 return record;
             }
 
+            // ! What this language has already cost, not what this run has. A set-aside row
+            //   is not gated by the settings stamp and would buy a fresh budget every scan.
+            if (BudgetSpent(record, config))
+            {
+                _logger.LogDebug(
+                    "{Item} ({Key}) has spent its download budget for this language",
+                    target.ItemName,
+                    target.Key);
+                return record;
+            }
+
             // ! Must stay ahead of all filesystem work.
             if (config.DryRunMode)
             {
@@ -906,6 +917,14 @@ public class SyncOrchestrator
                 StageOutcome.Skipped,
                 "No hearing-impaired annotations to remove.",
                 0);
+
+            // ! What a track scored short of the bar, so a near miss is visible.
+            _logger.LogDebug(
+                "{Item} reads as plain dialogue, {Marked} of {Total} cues marked ({Ratio:P1})",
+                target.ItemName,
+                detection.MarkedCueCount,
+                detection.CueCount,
+                detection.Ratio);
             return syncedPath;
         }
 
@@ -932,10 +951,11 @@ public class SyncOrchestrator
 
         RecordStage(record, SubtitleStageKind.Transform, StageOutcome.Succeeded, null, result.ElapsedMs);
         _logger.LogInformation(
-            "Removed hearing-impaired tags from {Item} ({Marked} of {Total} cues)",
+            "Removed hearing-impaired tags from {Item} ({Marked} of {Total} cues, {Ratio:P1})",
             target.ItemName,
             detection.MarkedCueCount,
-            detection.CueCount);
+            detection.CueCount,
+            detection.Ratio);
 
         // The sidecar name drops its sdh token only once the tags are gone.
         target.IsHearingImpaired = false;
@@ -1240,6 +1260,13 @@ public class SyncOrchestrator
            && SettingsUnchanged(record, config)
            && !ToleranceWouldNowAccept(record, config)
            && FingerprintMatches(record, target, target.SubtitlePath);
+
+    // ! The ledger holds one entry per download, so it is the only lifetime count there is.
+    //   Raising the limit is what releases the row.
+    internal static bool BudgetSpent(SyncRecord record, PluginConfiguration config)
+        => record.Status == SyncStatus.SetAside
+           && config.MaxDownloadsPerItem > 0
+           && record.AcquireAttempts.Count >= config.MaxDownloadsPerItem;
 
     // ! A refusal the audio caused is not an engine failure. Widening the tolerance retries it.
     private static bool ToleranceWouldNowAccept(SyncRecord record, PluginConfiguration config)

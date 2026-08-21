@@ -11,6 +11,9 @@
 // Mutation: drop the SearchFailures message  -> a provider that threw reports an empty answer.
 // Mutation: walk InnerException alone        -> a wall inside an aggregate is asked again per item.
 // Mutation: stop setting IsHearingImpaired   -> an accepted SDH download is named plain dialogue.
+// Mutation: return CapReached on an all-SDH budget -> a skip is reported as an audio failure.
+// Mutation: drop the SDH-Removed guard   -> the one cleaned file on the list is the one refused.
+// Mutation: match HI case-insensitively  -> an episode titled "Hi Mom" is read as a marker.
 
 using Jellyfin.Plugin.AutoSubSync.Configuration;
 using Jellyfin.Plugin.AutoSubSync.Models;
@@ -340,6 +343,63 @@ void Filters()
     Check("an advertised SDH candidate is dropped without a download", () =>
         Spent(Offer("a", sdh: true)) == 0 ? null : "an advertised SDH candidate was bought");
 
+    // ! The shapes a real provider offered, synthetic. The flag was false on all of them.
+    Check("a name that says SDH is dropped without a download", () =>
+    {
+        foreach (var name in new[]
+                 {
+                     "Show (2001) - S01E02 - Episode.eng.SDH.srt",
+                     "English SDH Movie.2001.2160p.WEB-DL.en-us.srt",
+                     "Movie.2001.WEB-DL.H.264-GROUP.en[sdh].srt",
+                     "Show S01E12 Episode.DVD.HI.pcc.en.GROUP",
+                     "Show.S01E12.Episode.DVDRip-GROUP.eng-HI"
+                 })
+        {
+            if (Spent(Offer("a", name: name)) != 0)
+            {
+                return $"bought {name}";
+            }
+        }
+
+        return null;
+    });
+
+    // ! The token can mean the annotations are gone. That names the best file on the list.
+    Check("a name saying the tags were removed is still bought", () =>
+        Spent(Offer("a", name: "English (SDH Removed) Movie.2001.2160p.WEB-DL.en-us.srt")) == 1
+            ? null
+            : "a cleaned subtitle was refused");
+
+    // ! Addic7ed puts the episode title in Name, so a lower-case Hi is a word, not a marker.
+    Check("an ordinary name carrying hi is still bought", () =>
+    {
+        foreach (var name in new[]
+                 {
+                     "[720p.WEB-DL] Show | Hi There | Completed",
+                     "Machine.2001.1080p.BluRay.eng.srt",
+                     "Highway.2001.1080p.BluRay.eng.srt",
+                     "Show.S01.E01.WEBRip.Service.en-us.srt"
+                 })
+        {
+            if (Spent(Offer("a", name: name)) != 1)
+            {
+                return $"refused {name}";
+            }
+        }
+
+        return null;
+    });
+
+    Check("turning SDH on lets a name that says SDH through", () =>
+    {
+        var run = Run(
+            WithSdh(),
+            [Offer("a", name: "Show (2001) - S01E02 - Episode.eng.SDH.srt")],
+            _ => CandidateVerdict.Kept);
+
+        return run.Outcome.Result == AcquireResult.Kept ? null : $"ended {run.Outcome.Result}";
+    });
+
     // ! The download has already been made, so it counts.
     Check("a candidate the detector finds SDH is discarded and does count", () =>
     {
@@ -373,6 +433,35 @@ void Filters()
     {
         var run = Run(WithSdh(), [Offer("a", sdh: true)], _ => CandidateVerdict.Kept);
         return run.Outcome.Result == AcquireResult.Kept ? null : $"ended {run.Outcome.Result}";
+    });
+
+    // ! A budget spent on files the judge never saw. Failing it blames the audio check.
+    Check("a budget spent entirely on SDH is set aside, not failed", () =>
+    {
+        var config = Config();
+        config.MaxDownloadsPerItem = 2;
+
+        var run = Run(config, [Offer("a"), Offer("b"), Offer("c")], _ => CandidateVerdict.Kept, sdhBytes: true);
+
+        if (run.Outcome.Fetches != 2)
+        {
+            return $"charged {run.Outcome.Fetches} downloads";
+        }
+
+        return run.Outcome.Result == AcquireResult.HearingImpairedOnly
+            ? null
+            : $"ended {run.Outcome.Result}";
+    });
+
+    Check("a budget with a real refusal in it still fails", () =>
+    {
+        var config = Config();
+        config.MaxDownloadsPerItem = 2;
+
+        var offers = new[] { Offer("a", sdh: true), Offer("b"), Offer("c"), Offer("d") };
+        var run = Run(config, offers, _ => CandidateVerdict.Misaligned);
+
+        return run.Outcome.Result == AcquireResult.CapReached ? null : $"ended {run.Outcome.Result}";
     });
 
     // ! Turning it on inserts candidates and re-orders nothing.
@@ -935,11 +1024,12 @@ static RemoteSubtitleInfo Offer(
     bool hash = false,
     bool ai = false,
     bool machine = false,
-    string format = "srt")
+    string format = "srt",
+    string? name = null)
     => new()
     {
         Id = id,
-        Name = id,
+        Name = name ?? id,
         ProviderName = "Open Subtitles",
         Format = format,
         ThreeLetterISOLanguageName = "eng",

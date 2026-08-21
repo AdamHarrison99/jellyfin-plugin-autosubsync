@@ -114,6 +114,19 @@ public class SubtitleAcquirer
             {
                 if (config.MaxDownloadsPerItem > 0 && tally.Fetches >= config.MaxDownloadsPerItem)
                 {
+                    // ! The audio check never saw these. Naming the limit blames a stage the
+                    //   item never reached.
+                    if (tally.Refusals == 0 && tally.Failures == 0 && tally.SdhFiltered > 0)
+                    {
+                        return new AcquireOutcome(
+                            AcquireResult.HearingImpairedOnly,
+                            "Set aside: the per-item download limit was reached, and every subtitle "
+                            + "downloaded for this language is hearing-impaired.",
+                            tally.Fetches,
+                            null,
+                            false);
+                    }
+
                     return new AcquireOutcome(
                         AcquireResult.CapReached,
                         "Failed: the per-item download limit was reached before a subtitle could be "
@@ -145,14 +158,21 @@ public class SubtitleAcquirer
                 target.IsHearingImpaired = offer.Info.HearingImpaired == true;
 
                 // ! On the bytes in hand, never on the advertisement. The download is already spent.
-                if (!config.AcquireHearingImpaired && SdhDetector.Inspect(path).IsHearingImpaired)
+                if (!config.AcquireHearingImpaired
+                    && SdhDetector.Inspect(path) is { IsHearingImpaired: true } marks)
                 {
                     tally.SdhFiltered++;
                     Ledger(record, offer.Info, provider, AcquireAttemptOutcome.HearingImpaired);
+
+                    // ! The counts, not a sample. Subtitle content is never logged.
                     _logger.LogDebug(
-                        "{Item}: discarded a {Provider} candidate the detector reads as hearing-impaired",
+                        "{Item}: discarded a {Provider} candidate the detector reads as hearing-impaired"
+                        + ", {Marked} of {Total} cues marked ({Ratio:P1})",
                         target.ItemName,
-                        provider);
+                        provider,
+                        marks.MarkedCueCount,
+                        marks.CueCount,
+                        marks.Ratio);
                     continue;
                 }
 
@@ -353,7 +373,8 @@ public class SubtitleAcquirer
             }
 
             // ! Free, so it must never consume the per-item budget.
-            if (!config.AcquireHearingImpaired && info.HearingImpaired == true)
+            if (!config.AcquireHearingImpaired
+                && (info.HearingImpaired == true || SdhNaming.IsHearingImpaired(info.Name)))
             {
                 tally.SdhFiltered++;
                 continue;
