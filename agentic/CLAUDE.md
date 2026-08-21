@@ -203,9 +203,11 @@ Jellyfin uses 4-part versions (`1.0.4.0`).
 
 | Bump | When |
 |---|---|
-| **Patch** `1.0.x.0` | Bug fixes, sync accuracy improvements |
-| **Minor** `1.x.0.0` | New features, new config options, either pinned dependency moving |
-| **Major** `x.0.0.0` | Breaking changes |
+| **Patch** `1.0.x.0` | Bug fixes, sync accuracy improvements, a setting that only tunes an existing one |
+| **Minor** `1.x.0.0` | New features, a config option that adds a capability, either pinned dependency moving |
+| **Major** `x.0.0.0` | Breaking changes, full rewrite/rerelease |
+
+! **A new checkbox is ¬automatically a minor bump.** What decides it is whether the release adds a **capability**, ¬whether an option appeared on the page. A setting that only chooses how a released build behaves on a path it already had — a threshold, a stricter or looser gate — is a **patch**, however new the control is. ! Judge it against the **last release**, ¬the last commit: a setting added and reworked several times before it ever shipped is still one arrival. → **1.6.2.0 is the worked example**: `RequireConclusiveDownloads` was a first-time control, but the download path shipped in 1.6.0.0 and the setting only picks how strict its existing audio gate is, so it went out as a patch.
 
 ### ! The release commit stands alone
 
