@@ -107,6 +107,10 @@ failed on — if it cannot beat them there, nothing downstream matters.
 
 ## `IDEA-ACQUIRE` — download a subtitle, sync it, and keep it only if it verifies
 
+> **Shaped → `agentic/plans/IDEA-ACQUIRE.md`.** That file carries the verified 10.11 API
+> contract, the design, nine settled decisions and six pre-implementation checks — five
+> answered or deferred, `AQ-P6` still open. Read it before adding to this entry.
+
 For an item with no subtitle in a wanted language, ask Jellyfin's own `ISubtitleManager` for the
 provider's result list and work down it: download one, sync it, and let the audio check decide. A
 verdict that verifies → the file stays as a sidecar. Anything else → the file is removed and the

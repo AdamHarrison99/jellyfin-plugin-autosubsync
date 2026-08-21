@@ -14,6 +14,4 @@ __pycache__/
 
 # Machine-local media paths for the calibrate harness.
 agentic/tools/verifycheck/calibrate.local.json
-
-# Harness fixtures are third-party subtitle text. Drop local copies in to run those cases.
-agentic/tools/*/fixtures/*.srt
+agentic/tools/*/fixtures/

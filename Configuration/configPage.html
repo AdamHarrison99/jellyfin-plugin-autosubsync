@@ -103,6 +103,16 @@
                 text-transform: uppercase;
                 letter-spacing: 0.05em;
                 opacity: 0.65;
+                display: flex;
+                align-items: baseline;
+                gap: 0.75em;
+            }
+
+            #AutoSubSyncConfigPage .statusRefresh {
+                font-size: 88%;
+                text-transform: none;
+                letter-spacing: normal;
+                opacity: 0.7;
             }
 
             #AutoSubSyncConfigPage .statusHeading {
@@ -267,7 +277,10 @@
                 </div>
 
                 <div id="statusPanel" class="statusPanel" style="display:none;">
-                    <div class="statusTitle">Status</div>
+                    <div class="statusTitle">
+                        <span>Status</span>
+                        <span class="statusRefresh">Counts auto refresh</span>
+                    </div>
                     <div id="statusDependencies"></div>
                     <div id="statusCounts" class="statGrid"></div>
 
@@ -308,7 +321,8 @@
                         The audio check always runs, and falls back to voice detection when the first pass cannot decide.
                         When this is enabled, a subtitle neither pass can confidently decide on is left alone rather than
                         written. Those are listed as "rejected as inconclusive"; untick this to retry them on the next
-                        sync.
+                        sync. This also applies to downloaded subtitles via the acquire feature; disabling
+                        means they are written even if the audio check cannot confirm they are correct.
                     </div>
 
                     <br />
@@ -636,10 +650,10 @@
                         + statCard(status.Skipped, 'already in sync')
                         + statCard(status.Rejected, 'rejected by audio checks', status.Rejected ? 'isRejected' : '')
                         + statCard(status.Failed, 'failed', status.Failed ? 'isFailed' : '')
-                        + statCard(status.SourceMissing, 'source gone')
                         + statCard(status.Unsupported, 'unsupported')
-                        + statCard(status.Waiting, 'waiting')
+                        + statCard(status.SourceMissing, 'source gone')
                         + statCard(status.DryRun, 'pending dry run')
+                        + statCard(status.Waiting, 'waiting')
                         + statCard(status.InFlight, 'running now', status.InFlight ? 'isActive' : '');
                 }
 

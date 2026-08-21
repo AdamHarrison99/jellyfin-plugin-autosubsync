@@ -257,6 +257,47 @@ Before every release, audit the whole codebase. ! Read `AUDIT.md` first → ¬re
 8. **Dry run integrity** — trace every filesystem call, confirm unreachable while `DryRunMode` is on. A leak here silently modifies a user's library
 9. **Rollback correctness** — restores backups before deleting outputs; never deletes a file it can't prove it created
 10. **Comment standards** — comments are ¬documentation; run the linter, then read them by hand (the script catches wording + run length, ¬whether a comment states *why* or has gone stale)
+11. **No personal data in anything published** — `agentic/` ships **inside the public repo**, so every file in it is world-readable at the next release. Sweep the whole tracked tree, ¬only the diff
+
+### ! The personal-data sweep (audit step 11)
+
+**What may never appear in a tracked file**, in `agentic/` or anywhere else: a **real name** · a **hostname**, share name or UNC path · an **IP address** · a **machine-local path** (drive letter, `C:\Users\…`, `/home/<user>`) · a **quotation of anything the user said**, ¬even paraphrased close · **third-party subtitle or video content**, incl. fixture text · an account name, email, token or key.
+
+! **A release is the moment this becomes irreversible** — git history keeps what a later commit deletes, so the sweep belongs *before* the release commit, ¬after someone notices.
+
+Five patterns, run separately over **tracked files only** — ¬one combined regex; the combined form is unreadable, and its hits cannot be triaged by class. Verified against this tree:
+
+```powershell
+$pats = [ordered]@{
+  'drive-letter path' = '[A-Za-z]:\\[A-Za-z0-9_ .-]+'
+  'UNC path'          = '\\\\[A-Za-z0-9._-]{2,}\\'
+  'unix home'         = '(/home/|/Users/)[a-z]'
+  'private IPv4'      = '(192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.|169\.254\.)[0-9]{1,3}\.[0-9]{1,3}'
+  'address:port'      = '[0-9]{1,3}(\.[0-9]{1,3}){3}:[0-9]{2,5}'
+}
+foreach ($k in $pats.Keys) {
+  $hits = git grep -nIE $pats[$k]
+  Write-Output "=== $k : $(@($hits).Count) hits ==="
+  $hits
+}
+```
+
+! **Do ¬grep for bare IPv4 in this repo.** Jellyfin ABI and plugin versions are 4-part (`10.11.0.0`, `1.5.1.0`) → a general IPv4 pattern returned **115** hits, every one a version number, which is how a real address hides in a list nobody reads. The private-range and `address:port` forms above are the ones that carry information.
+
+Then **read** what returns — a hit is ¬automatically a defect and a clean run is ¬automatically a pass. Known-benign classes, all present today:
+
+- **Regex literals.** `score:\s*`, `silence_end:\s*` — `e:\s` looks exactly like a drive path. The largest false-positive class by far.
+- **Standard install locations that name no machine**: `C:\Program Files\Tesseract-OCR`, `C:\Program Files\Jellyfin\Server`, `<ProgramData>\Jellyfin\…`. These are in the code deliberately as probe paths.
+- **Synthetic fixture paths** in the harnesses: `C:\m\Movie (2001).eng.srt`, `C:\media\Movie (2001)\…`.
+- The `\\<server>\…` placeholder, and `127.0.0.1`.
+
+**Never caught by any grep, so check by eye** — this is the half that matters: a real name · a user quotation · a library, share or machine *name* · subtitle text quoted as an example · a list of titles that discloses a private collection · an account or email.
+
+! **Confirm the untracked files that legitimately carry local paths are still untracked**, w/ `git check-ignore -v <path>` — *"it is not in `git status`"* proves nothing, ∵ an **already-tracked** file stops appearing there. Covered today: `verifycheck/calibrate.local.json`, `agentic/payload/`, `agentic/dist/`, `agentic/tools/ffmpeg/`.
+
+! **The third-party-fixture rule is `agentic/tools/*/fixtures/*.srt` — `.srt` only.** A fixture dropped in as `.ass`, `.vtt`, `.sup`, `.sub` or `.idx` is **¬ ignored** and commits third-party subtitle content on the next `git add -A`. Widen the rule before adding a fixture in any other format.
+
+! **A machine-specific note is ¬deleted, it is relocated** — it goes to the agent's own private memory outside the repo, along w/ the rule saying so. Deleting it loses what the next agent needs.
 
 ! **Do not commit code or cut a release until all findings have been presented to the user for review** — each w/ location, severity, proposed resolution; proceed only after approval.
 ! **Always update `AUDIT.md` with results immediately after completing an audit — do not ask for confirmation first.** Then check whether `README.md` needs updating for anything added since the last release.
