@@ -53,6 +53,13 @@ public class SyncRecord
 
     public int AttemptCount { get; set; }
 
+    // ! When the providers last answered in full and offered nothing usable. Null wherever one
+    //   of them could not be asked, so a wall never parks the row.
+    public DateTime? SearchedUtc { get; set; }
+
+    // What that search asked for. A change to any of it makes the recorded answer worthless.
+    public string? SearchStamp { get; set; }
+
     // ! Discovery does not offer this target. Excluded from every panel count; the row
     //   survives as rollback's only pointer.
     public bool Stale { get; set; }

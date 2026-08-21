@@ -196,12 +196,33 @@ public class SyncStore : ISyncStore, IDisposable
         {
             // ! Stale rows describe targets nothing offers, retired ones a file the plugin
             //   deleted. Reopening either queues work that can never run.
-            if (record.Status != SyncStatus.Failed || record.Stale || record.Retired)
+            if (record.Stale || record.Retired)
+            {
+                continue;
+            }
+
+            // ! A set-aside row keeps its status and is released by dropping the stamp alone.
+            //   The button names a retry, and a row waiting out its cooldown is what it means.
+            if (record.Status == SyncStatus.SetAside)
+            {
+                if (record.SearchedUtc is not null || record.SearchStamp is not null)
+                {
+                    record.SearchedUtc = null;
+                    record.SearchStamp = null;
+                    reopened++;
+                }
+
+                continue;
+            }
+
+            if (record.Status != SyncStatus.Failed)
             {
                 continue;
             }
 
             record.Status = SyncStatus.Pending;
+            record.SearchedUtc = null;
+            record.SearchStamp = null;
             record.RejectedOffsetMs = null;
             record.Message = null;
 

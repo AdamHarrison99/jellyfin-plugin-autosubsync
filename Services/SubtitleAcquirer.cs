@@ -25,7 +25,10 @@ public enum AcquireResult
     AllFiltered = 3,
     Exhausted = 4,
     CapReached = 5,
-    ProvidersRetired = 7
+    ProvidersRetired = 7,
+
+    // ! Every offer had already been downloaded and judged. The row keeps the verdict it holds.
+    NothingNew = 8
 }
 
 public sealed record AcquireOutcome(
@@ -33,7 +36,12 @@ public sealed record AcquireOutcome(
     string? Message,
     int Fetches,
     double? Confidence,
-    bool RefusedByAudio);
+    bool RefusedByAudio)
+{
+    // ! Every provider answered and its whole list was seen. A wall or a search failure leaves
+    //   the language still worth asking about.
+    public bool Answered { get; init; }
+}
 
 // Searches each provider in turn for a language the item has nothing in, one file at a time.
 public class SubtitleAcquirer
@@ -69,6 +77,8 @@ public class SubtitleAcquirer
         public int Abstentions { get; set; }
 
         public int Walled { get; set; }
+
+        public int AlreadyTried { get; set; }
 
         public int Failures { get; set; }
 
@@ -130,13 +140,15 @@ public class SubtitleAcquirer
                             false);
                     }
 
+                    // ! Set aside, never failed. The allowance stopped this item, and raising the
+                    //   limit is what releases it.
                     return new AcquireOutcome(
                         AcquireResult.CapReached,
-                        "Failed: the per-item download limit was reached before a subtitle could be "
-                        + "confirmed against the audio.",
+                        "Set aside: the per-item download limit was reached before a subtitle could "
+                        + "be confirmed against the audio.",
                         tally.Fetches,
                         null,
-                        tally.Failures == 0);
+                        false);
                 }
 
                 // ! Costs nothing and is checked per offer. A wall on one internal source of an
@@ -153,6 +165,10 @@ public class SubtitleAcquirer
                 // ! A provider that hit a wall is charged nothing. No download was made.
                 if (fetched.Retired)
                 {
+                    // ! Counted here as well as before the fetch. A wall usually surfaces on the
+                    //   first fetch, and an uncounted one reads as a language answered in full.
+                    tally.Walled++;
+
                     // ! Only a wall the whole provider is behind ends its list. One source's wall
                     //   is skipped by the check above on the offers that follow it.
                     if (_retirement.ReasonFor(provider) is not null)
@@ -227,26 +243,38 @@ public class SubtitleAcquirer
             }
         }
 
-        if (tally.Refusals > 0 || tally.Failures > 0)
+        // ! A download that produced no file was refused by nothing. One wording over both puts
+        //   the same sentence on two cards at once.
+        if (tally.Failures > 0)
         {
-            // ! Nothing was measured, so nothing was refused. Naming this a refusal puts it on
-            //   the card that reports what the check decided.
-            var abstained = tally.Failures == 0 && tally.Abstentions == tally.Refusals;
-
             return new AcquireOutcome(
                 AcquireResult.Exhausted,
-                abstained
-                    ? SyncOutcome.NoVerdictExhausted
+                "Failed: no subtitle offered for this language could be downloaded and confirmed "
+                + "against the audio.",
+                tally.Fetches,
+                null,
+                false);
+        }
+
+        if (tally.Refusals > 0)
+        {
+            return new AcquireOutcome(
+                AcquireResult.Exhausted,
+                tally.Abstentions == tally.Refusals
+                    ? SyncOutcome.NoVerdictExhausted(language)
                     : "Failed: every subtitle offered for this language was refused by the audio check.",
                 tally.Fetches,
                 null,
-                tally.Failures == 0);
+                true);
         }
+
+        // ! What the providers actually settled. The next scan reads it and stays quiet.
+        var answered = tally.SearchFailures == 0 && tally.Walled == 0;
 
         // ! Carries the fetches it spent. A post-fetch discard is still a download made.
         if (tally.SdhFiltered > 0)
         {
-            return Set(AcquireResult.HearingImpairedOnly, tally.Fetches);
+            return Set(AcquireResult.HearingImpairedOnly, tally.Fetches, answered);
         }
 
         // ! A provider that threw offered nothing measurable. Reporting it as an empty answer
@@ -274,13 +302,23 @@ public class SubtitleAcquirer
                 false);
         }
 
+        // ! Nothing here was judged this run, so nothing here may restate the row. Overwriting a
+        //   refusal with a set-aside empties the card that refusal belongs on.
+        if (answered && tally.Fetches == 0 && tally.Offered == 0 && tally.AlreadyTried > 0)
+        {
+            return new AcquireOutcome(AcquireResult.NothingNew, null, 0, null, false)
+            {
+                Answered = true
+            };
+        }
+
         return tally.Raw == 0
-            ? Set(AcquireResult.NothingOffered, tally.Fetches)
-            : Set(AcquireResult.AllFiltered, tally.Fetches);
+            ? Set(AcquireResult.NothingOffered, tally.Fetches, answered)
+            : Set(AcquireResult.AllFiltered, tally.Fetches, answered);
     }
 
-    private static AcquireOutcome Set(AcquireResult result, int fetches)
-        => new(result, MessageFor(result), fetches, null, false);
+    private static AcquireOutcome Set(AcquireResult result, int fetches, bool answered = false)
+        => new(result, MessageFor(result), fetches, null, false) { Answered = answered };
 
     private static string MessageFor(AcquireResult result)
         => result switch
@@ -432,6 +470,14 @@ public class SubtitleAcquirer
                 continue;
             }
 
+            // ! Counted apart from the rest. A file this target already downloaded is not an
+            //   unusable one, and the outcome says so.
+            if (Tried(info, record))
+            {
+                tally.AlreadyTried++;
+                continue;
+            }
+
             if (Filtered(info, record, config))
             {
                 continue;
@@ -465,9 +511,14 @@ public class SubtitleAcquirer
             return true;
         }
 
-        return record.AcquireAttempts.Exists(
-            attempt => string.Equals(attempt.SubtitleId, info.Id, StringComparison.Ordinal));
+        return false;
     }
+
+    // ! The provider-scoped id, which a re-upload changes. A download already spent on this file
+    //   is never spent on it twice.
+    private static bool Tried(RemoteSubtitleInfo info, SyncRecord record)
+        => record.AcquireAttempts.Exists(
+            attempt => string.Equals(attempt.SubtitleId, info.Id, StringComparison.Ordinal));
 
     private static string? Extension(string? format)
         => string.IsNullOrWhiteSpace(format) ? null : "." + format.Trim().TrimStart('.').ToLowerInvariant();

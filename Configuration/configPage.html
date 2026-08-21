@@ -93,7 +93,6 @@
 
             /* ! Grey alphas only; this page renders on light and dark themes. */
             #AutoSubSyncConfigPage .statusPanel {
-                container-type: inline-size;
                 margin-bottom: 1.75em;
                 padding: 1.1em 1.25em 1.25em 1.25em;
                 border: 1px solid rgba(128, 128, 128, 0.3);
@@ -152,34 +151,12 @@
 
             #AutoSubSyncConfigPage .statGrid {
                 display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(7em, 1fr));
+                /* ! A floor, not a column count. A fixed count narrows the tile past its own
+                   label and the text leaves the box. */
+                grid-template-columns: repeat(auto-fit, minmax(8em, 1fr));
+                grid-auto-rows: 1fr;
                 gap: 0.55em;
                 margin-top: 0.9em;
-            }
-
-            /* ! 13 tiles, a prime: only the widest breakpoint divides evenly. */
-            @container (min-width: 0em) {
-                #AutoSubSyncConfigPage .statGrid {
-                    grid-template-columns: repeat(3, minmax(0, 1fr));
-                }
-            }
-
-            @container (min-width: 26em) {
-                #AutoSubSyncConfigPage .statGrid {
-                    grid-template-columns: repeat(4, minmax(0, 1fr));
-                }
-            }
-
-            @container (min-width: 40em) {
-                #AutoSubSyncConfigPage .statGrid {
-                    grid-template-columns: repeat(6, minmax(0, 1fr));
-                }
-            }
-
-            @container (min-width: 62em) {
-                #AutoSubSyncConfigPage .statGrid {
-                    grid-template-columns: repeat(13, minmax(0, 1fr));
-                }
             }
 
             #AutoSubSyncConfigPage .stat {
@@ -195,6 +172,8 @@
                 font-size: 1.55em;
                 font-weight: 600;
                 line-height: 1.1;
+                /* ! One reading, never two lines. A wrapped offset reads as two numbers. */
+                white-space: nowrap;
             }
 
             #AutoSubSyncConfigPage .statLabel {
@@ -203,7 +182,6 @@
                 line-height: 1.25;
                 opacity: 0.72;
                 margin-top: 0.25em;
-                overflow-wrap: break-word;
             }
 
             #AutoSubSyncConfigPage .stat.isFailed .statValue {
@@ -326,11 +304,9 @@
                         <span>Only sync when the audio checks are conclusive</span>
                     </label>
                     <div class="fieldDescription">
-                        The audio check always runs, and falls back to voice detection when the first pass cannot decide.
-                        When this is enabled, a subtitle neither pass can confidently decide on is left alone rather than
-                        written. Those are listed as "rejected as inconclusive"; untick this to retry them on the next
-                        sync. This also applies to downloaded subtitles via the acquire feature; disabling
-                        means they are written even if the audio check cannot confirm they are correct.
+                        A subtitle neither the audio check nor voice detection can decide on is left alone,
+                        and listed as "rejected as inconclusive". Off, the sync engine's own score decides
+                        instead. Applies to downloaded subtitles too.
                     </div>
 
                     <br />
@@ -357,9 +333,8 @@
                         <span>Process embedded subtitle tracks</span>
                     </label>
                     <div class="fieldDescription">
-                        Embedded tracks are extracted, synchronized, and written back as a separate
-                        subtitle file next to the media. The original file is never modified, so
-                        Jellyfin will list both the original embedded track and the synced one.
+                        Extracted, synced, and written back as a separate file next to the media.
+                        The video is never modified, so Jellyfin lists both.
                     </div>
 
                     <div id="coveredEmbeddedGroup">
@@ -368,10 +343,9 @@
                             <span>Process embedded tracks when an external subtitle of the same language exists</span>
                         </label>
                         <div class="fieldDescription">
-                            Off, a language a sidecar already covers is left alone and the subtitle
-                            list stays short. Turn this on to sync those tracks anyway &mdash; a
-                            "Signs &amp; Songs" track usually carries the same language as the full
-                            subtitle, and this is what brings it back.
+                            Off, a language a sidecar already covers is left alone and the subtitle list
+                            stays short. On also syncs "Signs &amp; Songs" tracks, which carry the same
+                            language as the full subtitle.
                         </div>
                     </div>
 
@@ -380,10 +354,9 @@
                         <span>Convert image-based subtitles to text</span>
                     </label>
                     <div class="fieldDescription">
-                        PGS, VobSub, and DVB tracks are pictures of text, which no alignment engine
-                        can read. Converting them by OCR produces a text subtitle that can then be
-                        synchronized. OCR is slow and never perfect; the result is written as a new
-                        file and the original track is left alone.
+                        PGS, VobSub, and DVB tracks are pictures of text, which no alignment engine can
+                        read. OCR turns them into a text subtitle that can be synced. Slow and never
+                        perfect; the original track is left alone.
                     </div>
 
                     <div id="coveredOcrGroup">
@@ -392,10 +365,9 @@
                             <span>Run the OCR when a text subtitle of the same language exists</span>
                         </label>
                         <div class="fieldDescription">
-                            Off, an image track is skipped when you already have that language as
-                            text, which is minutes of OCR saved per track. Turn this on to convert
-                            every image track regardless. "Signs &amp; Songs" and hearing-impaired
-                            tracks are always converted either way.
+                            Off, an image track is skipped where you already have that language as text
+                            &mdash; minutes of OCR saved per track. "Signs &amp; Songs" and
+                            hearing-impaired tracks are converted either way.
                         </div>
                     </div>
 
@@ -404,9 +376,8 @@
                         <span>Remove hearing-impaired tags</span>
                     </label>
                     <div class="fieldDescription">
-                        Strips <code>[door creaks]</code>, <code>(SIGHS)</code>, and speaker labels
-                        from the subtitles that are written. Lines that consist only of such a tag
-                        are dropped entirely.
+                        Strips <code>[door creaks]</code>, <code>(SIGHS)</code>, and speaker labels from
+                        the subtitles that are written. Lines holding nothing else are dropped.
                     </div>
 
                     <label class="checkboxContainer">
@@ -414,21 +385,19 @@
                         <span>Remove duplicate external subtitles</span>
                     </label>
                     <div class="fieldDescription">
-                        Subtitle files that hold at least 85% the same text, styling, and format are
-                        collapsed to one. Only external files are removed; a track inside
-                        the video is never touched. Every removed file is copied to the backup vault
-                        first and is restored by "Roll back everything".
+                        External files holding at least 85% the same text and styling are collapsed to
+                        one. Tracks inside the video are never touched. Removed files are backed up and
+                        restored by "Roll back everything".
                     </div>
 
                     <div class="inputContainer">
                         <label class="inputLabel" for="txtLanguages">Languages</label>
                         <input is="emby-input" type="text" id="txtLanguages" />
                         <div class="fieldDescription">
-                            Comma-separated language codes (<code>eng, spa</code> or <code>en, es</code>).
-                            Two- and three-letter forms both work and can be mixed. Leave empty for
-                            all languages. Subtitles with an unknown language are always processed.
-                            This list is also what <em>Download</em> below treats as the languages you
-                            want, first listed tried first, and an empty box downloads nothing.
+                            Comma-separated codes (<code>eng, spa</code> or <code>en, es</code>). Two- and
+                            three-letter forms can be mixed. Empty means all languages, and an unknown
+                            language is always processed. <em>Download</em> below uses this same list,
+                            first listed tried first.
                         </div>
                     </div>
 
@@ -442,13 +411,11 @@
                         <span>Automatically download missing subtitles</span>
                     </label>
                     <div class="fieldDescription">
-                        For a language listed under <em>Languages</em> that an item has no subtitle in
-                        at all, a candidate is downloaded through your installed subtitle provider
-                        plugins, synchronized, and kept only if the audio check confirms it. Anything
-                        unconfirmed is discarded and never reaches the library.
-                        <strong>Leave <em>Languages</em> empty and nothing is ever downloaded</strong>
-                        &mdash; an empty box means every language, and there is no such thing as
-                        downloading every language.
+                        For a language under <em>Languages</em> that an item has no subtitle in at all, a
+                        candidate is downloaded through your provider plugins, synced, and kept only if
+                        the audio check confirms it. Anything unconfirmed is discarded.
+                        <strong>Leave <em>Languages</em> empty and nothing is ever downloaded.</strong>
+                        Every candidate tried spends your provider allowance, including rejected ones.
                     </div>
 
                     <div id="acquireGroup">
@@ -456,8 +423,19 @@
                             <label class="inputLabel" for="txtMaxDownloads">Maximum downloads per item</label>
                             <input is="emby-input" type="number" id="txtMaxDownloads" min="0" max="50" />
                             <div class="fieldDescription">
-                                <strong>0 = unlimited</strong>: How many candidates one item may download and try before it gives up
-                                on that language. The budget spans every provider.
+                                <strong>0 = unlimited</strong>: How many candidates one item may download
+                                before giving up on that language. Spans every provider, and counts over
+                                the retry window below.
+                            </div>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="txtRetryDays">Wait before trying an item again (days)</label>
+                            <input is="emby-input" type="number" id="txtRetryDays" min="0" max="365" />
+                            <div class="fieldDescription">
+                                <strong>0 = no wait</strong>: How long an item that came away with nothing
+                                is left alone before the providers are asked again. Files it has already
+                                downloaded are never downloaded twice. Max 365.
                             </div>
                         </div>
 
@@ -466,11 +444,10 @@
                             <span>Download even when the video has an embedded track</span>
                         </label>
                         <div class="fieldDescription">
-                            Off, a language already carried inside the video file is not a gap and
-                            nothing is downloaded for it. Turn this on where embedded tracks are poor
-                            rips, mistimed, or hearing-impaired only. Most items without a sidecar do
-                            have an embedded track, so this points the feature at far more of your
-                            library.
+                            Off, a language already inside the video is not a gap. Turn this on where
+                            embedded tracks are poor rips, mistimed, or hearing-impaired only. Most items
+                            without a sidecar do have an embedded track, so this aims the feature at far
+                            more of your library.
                         </div>
 
                         <label class="checkboxContainer">
@@ -478,11 +455,11 @@
                             <span>Accept hearing-impaired subtitles</span>
                         </label>
                         <div class="fieldDescription">
-                            Off, only ordinary subtitles are downloaded, and a candidate that turns
-                            out to carry sound descriptions is discarded after it arrives. On,
-                            hearing-impaired files become acceptable but are never preferred. Turning
-                            this off while <em>Remove hearing-impaired tags</em> is on is a choice to
-                            have fewer subtitles: those files would have been cleaned up anyway.
+                            Off, a candidate that turns out to carry sound descriptions is discarded
+                            after it arrives &mdash; and it has already cost a download. On, they are
+                            acceptable but never preferred. Worth turning on if
+                            <em>Remove hearing-impaired tags</em> is on, since those files would be
+                            cleaned up anyway.
                         </div>
 
                         <div id="inconclusiveGroup">
@@ -491,13 +468,11 @@
                             <span>Only save downloads when the audio checks are conclusive</span>
                         </label>
                         <div class="fieldDescription">
-                            On, the item keeps downloading candidates until the audio check is
-                            conclusive and confident the sync is right, up to the download limit.
-                            Off, the first candidate the check does not reject is saved.
-                            An item that never
-                            reaches a verdict is listed under "rejected as inconclusive". This has
-                            no effect unless <em>Only sync when the audio checks are conclusive</em>
-                            is on.
+                            On, the item keeps downloading candidates until the check reaches a good
+                            verdict, up to the download limit. Off, the first candidate the check does
+                            not outright reject is saved. An item that never reaches a verdict is listed
+                            under "rejected as inconclusive". No effect unless
+                            <em>Only sync when the audio checks are conclusive</em> is on.
                         </div>
                         </div>
 
@@ -505,13 +480,11 @@
                             <label class="inputLabel" for="txtDownloadProviders">Additional download providers</label>
                             <input is="emby-input" type="text" id="txtDownloadProviders" />
                             <div class="fieldDescription">
-                                Comma-separated provider names. This box does two jobs at once. It
-                                <strong>sets the order providers are asked in</strong> &mdash; anything
-                                you list is asked before everything you do not, in the order you wrote
-                                it. It is also the <strong>only way to tell this plugin that a provider
-                                it does not recognize can download subtitles</strong>, since nothing in
-                                Jellyfin identifies which providers do. Names must match the provider
-                                exactly, ignoring case and surrounding spaces.
+                                Comma-separated provider names, doing two jobs. Anything you list is
+                                <strong>asked before everything you do not</strong>, in the order you
+                                wrote it. It is also the <strong>only way to tell the plugin an
+                                unrecognized provider can download</strong>. Names must match exactly,
+                                ignoring case and surrounding spaces.
                             </div>
                             <div id="providerHint" class="fieldDescription"></div>
                         </div>
@@ -528,10 +501,9 @@
                         </select>
                     </div>
                     <div class="fieldDescription belowControl">
-                        Embedded tracks always become new sidecar files; this setting only
-                        affects subtitles that are already separate files. Overwriting always
-                        backs the original up first, into the plugin's own data folder and never
-                        beside your media. If the backup cannot be written, the original is left
+                        Embedded tracks always become new files; this affects subtitles that are
+                        already separate files. Overwriting backs the original up first, into the
+                        plugin's data folder. If the backup cannot be written, the original is left
                         alone.
                     </div>
 
@@ -898,9 +870,10 @@
                     });
                 }
 
-                // All four dependents go dead together; a live control under a dead toggle lies.
+                // Every dependent goes dead together; a live control under a dead toggle lies.
                 function updateAcquireState(page, enabled) {
-                    ['#txtMaxDownloads', '#chkAcquireEmbedded', '#chkAcquireHi', '#txtDownloadProviders']
+                    ['#txtMaxDownloads', '#txtRetryDays', '#chkAcquireEmbedded', '#chkAcquireHi',
+                        '#txtDownloadProviders']
                         .forEach(function (selector) {
                             page.querySelector(selector).disabled = !enabled;
                         });
@@ -1007,6 +980,7 @@
 
                         page.querySelector('#chkAcquire').checked = config.AcquireMissingSubtitles;
                         page.querySelector('#txtMaxDownloads').value = config.MaxDownloadsPerItem;
+                        page.querySelector('#txtRetryDays').value = config.RetryDownloadsAfterDays;
                         page.querySelector('#chkAcquireEmbedded').checked = config.AcquireWhenEmbeddedExists;
                         page.querySelector('#chkAcquireHi').checked = config.AcquireHearingImpaired;
                         page.querySelector('#chkConclusiveDownloads').checked =
@@ -1072,6 +1046,7 @@
 
                         config.AcquireMissingSubtitles = page.querySelector('#chkAcquire').checked;
                         config.MaxDownloadsPerItem = readInt(page, '#txtMaxDownloads', 3, 0, 50);
+                        config.RetryDownloadsAfterDays = readInt(page, '#txtRetryDays', 7, 0, 365);
                         config.AcquireWhenEmbeddedExists = page.querySelector('#chkAcquireEmbedded').checked;
                         config.AcquireHearingImpaired = page.querySelector('#chkAcquireHi').checked;
                         config.RequireConclusiveDownloads =
@@ -1248,4 +1223,4 @@
         </script>
     </div>
 </body>
-</html>
+</htm

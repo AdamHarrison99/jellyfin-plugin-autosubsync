@@ -710,7 +710,8 @@ void FallThrough()
     {
         var run = Run(Conclusive(true), [Offer("a"), Offer("b")], _ => CandidateVerdict.Inconclusive);
 
-        if (run.Outcome.Message != SyncOutcome.NoVerdictExhausted)
+        // ! Names the language, so the reader knows which slot the check gave up on.
+        if (run.Outcome.Message != SyncOutcome.NoVerdictExhausted("eng"))
         {
             return $"said \"{run.Outcome.Message}\"";
         }
@@ -728,7 +729,7 @@ void FallThrough()
             [Offer("a"), Offer("b")],
             id => id == "b" ? CandidateVerdict.Misaligned : CandidateVerdict.Inconclusive);
 
-        if (run.Outcome.Message == SyncOutcome.NoVerdictExhausted)
+        if (run.Outcome.Message == SyncOutcome.NoVerdictExhausted("eng"))
         {
             return "named as inconclusive";
         }
@@ -736,6 +737,128 @@ void FallThrough()
         return SyncOutcome.IsInconclusiveRefusal(Panel(run.Outcome))
             ? "the panel reads it as inconclusive"
             : null;
+    });
+
+    // ! The panel groups on the sentence. One wording over both classifications renders the
+    //   same line under two headings at once.
+    Check("a download that never produced a file is not worded as a refusal", () =>
+    {
+        var refused = Run(Config(), [Offer("a")], _ => CandidateVerdict.Misaligned);
+        var broke = Run(Config(), [Offer("a")], _ => CandidateVerdict.Failed);
+
+        if (broke.Outcome.RefusedByAudio)
+        {
+            return "a failed download was reported as an audio refusal";
+        }
+
+        return refused.Outcome.Message == broke.Outcome.Message
+            ? $"both say \"{broke.Outcome.Message}\""
+            : null;
+    });
+
+    // ! The allowance stopped the item short of the check. Naming it a refusal blames a stage
+    //   the item never reached.
+    Check("a spent allowance is set aside, and says so", () =>
+    {
+        var config = Config();
+        config.MaxDownloadsPerItem = 1;
+
+        var run = Run(config, [Offer("a"), Offer("b")], _ => CandidateVerdict.Misaligned);
+
+        if (run.Outcome.Result != AcquireResult.CapReached)
+        {
+            return $"ended {run.Outcome.Result}";
+        }
+
+        if (run.Outcome.RefusedByAudio)
+        {
+            return "a spent allowance was reported as an audio refusal";
+        }
+
+        return run.Outcome.Message?.StartsWith("Set aside:", StringComparison.Ordinal) == true
+            ? null
+            : $"said \"{run.Outcome.Message}\"";
+    });
+
+    Console.WriteLine();
+    Console.WriteLine("Was the language really asked about?");
+
+    // ! What parks the row until the cooldown lapses. A wall must never set it.
+    Check("an empty answer from every provider is an answer", () =>
+    {
+        var run = Run(Config(), [], _ => CandidateVerdict.Kept);
+
+        return run.Outcome.Answered ? null : "an answered search was not recorded as one";
+    });
+
+    Check("a walled source leaves the language still worth asking about", () =>
+    {
+        var retirement = new ProviderRetirement();
+        retirement.RetireSource("subbuzz", "opensubtitles.com", "has spent its download allowance");
+
+        var source = new StubSource(["subbuzz"]);
+        source.Results["subbuzz"] = [Aggregated("opensubtitles.com", "1")];
+
+        var run = RunWith(Config(), source, _ => CandidateVerdict.Kept, retirement);
+
+        return run.Outcome.Answered ? "a wall was recorded as an answer" : null;
+    });
+
+    // ! The usual shape of a wall. An allowance is spent on a fetch, not on a search, and the
+    //   pre-fetch check cannot have seen it.
+    Check("a wall raised by the fetch leaves the language worth asking about", () =>
+    {
+        var source = new StubSource(["Open Subtitles"]);
+        source.Results["Open Subtitles"] = [Offer("a1")];
+        source.FetchThrows["a1"] = new RateLimitExceededException();
+
+        var run = RunWith(Config(), source, _ => CandidateVerdict.Kept, new ProviderRetirement());
+
+        if (run.Outcome.Answered)
+        {
+            return "a wall raised mid-fetch was recorded as an answer";
+        }
+
+        return run.Outcome.Result == AcquireResult.ProvidersRetired
+            ? null
+            : $"ended {run.Outcome.Result}";
+    });
+
+    // ! Nothing was judged this run, so nothing may restate the row. Any other result overwrites
+    //   the verdict the record holds and empties the card it sits on.
+    Check("a list this item has already tried leaves the row alone", () =>
+    {
+        var record = NewRecord();
+        record.AcquireAttempts.Add(new AcquireAttempt
+        {
+            SubtitleId = "a1",
+            AttemptedUtc = DateTime.UtcNow,
+            Outcome = AcquireAttemptOutcome.Inconclusive
+        });
+
+        var source = new StubSource(["Open Subtitles"]);
+        source.Results["Open Subtitles"] = [Offer("a1")];
+
+        var run = RunWith(Config(), source, _ => CandidateVerdict.Kept, record: record);
+
+        if (run.Outcome.Fetches != 0)
+        {
+            return $"bought {run.Outcome.Fetches} candidates it had already tried";
+        }
+
+        return run.Outcome.Result == AcquireResult.NothingNew
+            ? null
+            : $"ended {run.Outcome.Result}";
+    });
+
+    Check("a provider that threw leaves the language still worth asking about", () =>
+    {
+        var source = new StubSource(["Open Subtitles"]);
+        source.SearchThrows["Open Subtitles"] = new IOException("the search timed out");
+
+        var run = RunWith(Config(), source, _ => CandidateVerdict.Kept);
+
+        return run.Outcome.Answered ? "a search failure was recorded as an answer" : null;
     });
 
     Check("nothing offered anywhere is set aside, not failed", () =>

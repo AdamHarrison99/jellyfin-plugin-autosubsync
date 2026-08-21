@@ -104,7 +104,7 @@ public class SyncOrchestrator
                 return record;
             }
 
-            if (IsExhausted(record, target, config))
+            if (IsExhausted(record, target, config, DateTime.UtcNow))
             {
                 _logger.LogDebug(
                     "{Item} ({Key}) failed and is unchanged since",
@@ -115,12 +115,24 @@ public class SyncOrchestrator
 
             // ! What this language has already cost, not what this run has. A set-aside row
             //   is not gated by the settings stamp and would buy a fresh budget every scan.
-            if (BudgetSpent(record, config))
+            if (BudgetSpent(record, config, DateTime.UtcNow))
             {
                 _logger.LogDebug(
                     "{Item} ({Key}) has spent its download budget for this language",
                     target.ItemName,
                     target.Key);
+                return record;
+            }
+
+            // ! A search is a network request under the admin's account. Asking again inside the
+            //   window spends one on an answer the row already carries.
+            if (SearchedRecently(record, config, DateTime.UtcNow))
+            {
+                _logger.LogDebug(
+                    "{Item} ({Key}) was searched for {Language} recently and is not asked again",
+                    target.ItemName,
+                    target.Key,
+                    target.Language);
                 return record;
             }
 
@@ -598,6 +610,10 @@ public class SyncOrchestrator
                 cancellationToken)
             .ConfigureAwait(false);
 
+        // ! Before the switch, so every close stamps it. The retry gate reads this stamp, and
+        //   any later write to the row would restart UpdatedUtc.
+        StampSearch(record, outcome, config);
+
         switch (outcome.Result)
         {
             case AcquireResult.Kept:
@@ -605,12 +621,17 @@ public class SyncOrchestrator
                 break;
 
             case AcquireResult.Exhausted:
-            case AcquireResult.CapReached:
                 Fail(
                     record,
                     outcome.Message,
                     record.RejectedOffsetMs,
                     outcome.RefusedByAudio ? SubtitleStageKind.Verify : SubtitleStageKind.Sync);
+                break;
+
+            // ! The row already holds a verdict on every one of these files. Restating it as a
+            //   set-aside takes the item off the card that verdict belongs on.
+            case AcquireResult.NothingNew:
+                SafeUpsert(record, SubtitleStageKind.Acquire);
                 break;
 
             // ! Set aside, never unsupported. Nothing was bought and no track went unread.
@@ -620,6 +641,7 @@ public class SyncOrchestrator
                 record.RefusedByAudio = false;
                 record.RejectedOffsetMs = null;
                 record.AppliedOffsetMs = null;
+                LogSetAside(target, outcome);
                 SafeUpsert(record, SubtitleStageKind.Acquire);
                 break;
         }
@@ -657,9 +679,39 @@ public class SyncOrchestrator
         => result switch
         {
             AcquireResult.Kept => StageOutcome.Succeeded,
-            AcquireResult.Exhausted or AcquireResult.CapReached => StageOutcome.Failed,
+            AcquireResult.Exhausted => StageOutcome.Failed,
             _ => StageOutcome.Skipped
         };
+
+    // ! The time is stamped on every close and is what the retry gate reads. The stamp is the
+    //   answered half, and its absence is what stops a wall parking the row.
+    private static void StampSearch(SyncRecord record, AcquireOutcome outcome, PluginConfiguration config)
+    {
+        record.SearchedUtc = DateTime.UtcNow;
+        record.SearchStamp = outcome.Answered ? config.SearchStamp() : null;
+    }
+
+    // ! A set-aside row carries no card and no reason list. A spent allowance is stated here.
+    private void LogSetAside(SubtitleTarget target, AcquireOutcome outcome)
+    {
+        var reason = Reason(Unprefixed(outcome.Message));
+
+        if (outcome.Result == AcquireResult.CapReached)
+        {
+            _logger.LogInformation("Set aside {Item} ({Key}): {Reason}", target.ItemName, target.Key, reason);
+            return;
+        }
+
+        _logger.LogDebug("Set aside {Item} ({Key}): {Reason}", target.ItemName, target.Key, reason);
+    }
+
+    // ! Reason keeps a multi-word action word, and the line already opens with this one.
+    private static string? Unprefixed(string? message)
+        => message is not null && message.StartsWith(SetAsidePrefix, StringComparison.Ordinal)
+            ? message[SetAsidePrefix.Length..]
+            : message;
+
+    private const string SetAsidePrefix = "Set aside: ";
 
     // ! Rides on top of the sync gate and never loosens it. Off, a no-verdict download falls
     //   through to the engine gates below the verdict.
@@ -708,7 +760,7 @@ public class SyncOrchestrator
 
         if (attempt.ProducedPath is null)
         {
-            Fail(record, attempt.Message);
+            FailCandidate(record, attempt.Message);
             return CandidateVerdict.Failed;
         }
 
@@ -718,7 +770,7 @@ public class SyncOrchestrator
         if (change.RateRatio is { } ratio && Math.Abs(ratio - 1) > MaximumRateDrift)
         {
             TryDelete(attempt.ProducedPath);
-            Fail(
+            FailCandidate(
                 record,
                 "Failed: the sync engine rescaled the subtitle by a factor that matches "
                 + "no known framerate conversion.");
@@ -749,7 +801,7 @@ public class SyncOrchestrator
         {
             TryDelete(attempt.ProducedPath);
             LogRefusal(target, verdict, decision);
-            Fail(record, decision.Message, decision.RejectedOffsetMs, SubtitleStageKind.Verify);
+            FailCandidate(record, decision.Message, decision.RejectedOffsetMs, SubtitleStageKind.Verify);
 
             // ! The verdict decides, not the branch. The acquirer counts abstentions apart from
             //   refusals so the exhausted message can name which one emptied the list.
@@ -788,7 +840,7 @@ public class SyncOrchestrator
         if (placement is null)
         {
             TryDelete(finalPath);
-            Fail(record, "Failed: the downloaded subtitle could not be written into the library.");
+            FailCandidate(record, "Failed: the downloaded subtitle could not be written into the library.");
             return CandidateVerdict.Failed;
         }
 
@@ -1256,18 +1308,58 @@ public class SyncOrchestrator
            || (record.OutputPath is { } path && File.Exists(path));
 
     // ! The engine ran already. Identical inputs fail identically; only a change retries.
-    internal static bool IsExhausted(SyncRecord record, SubtitleTarget target, PluginConfiguration config)
+    internal static bool IsExhausted(
+        SyncRecord record,
+        SubtitleTarget target,
+        PluginConfiguration config,
+        DateTime utcNow)
         => record.Status == SyncStatus.Failed
            && SettingsUnchanged(record, config)
            && !ToleranceWouldNowAccept(record, config)
+           && !RetryDue(record, target, config, utcNow)
            && FingerprintMatches(record, target, target.SubtitlePath);
 
-    // ! The ledger holds one entry per download, so it is the only lifetime count there is.
-    //   Raising the limit is what releases the row.
-    internal static bool BudgetSpent(SyncRecord record, PluginConfiguration config)
-        => record.Status == SyncStatus.SetAside
+    // ! Only a download is worth trying again on the clock alone. A sync fails the same way on
+    //   the same bytes however long it waits.
+    internal static bool RetryDue(
+        SyncRecord record,
+        SubtitleTarget target,
+        PluginConfiguration config,
+        DateTime utcNow)
+        => target.Origin == SubtitleOrigin.Acquired
+           && (config.RetryDownloadsAfterDays <= 0
+               || Lapsed(record.SearchedUtc ?? record.UpdatedUtc, config, utcNow));
+
+    // ! Counted over the window the retry setting opens. The acquirer skips any candidate the
+    //   ledger names, so a fresh window buys only files this target has not seen.
+    internal static bool BudgetSpent(SyncRecord record, PluginConfiguration config, DateTime utcNow)
+        => record.Status is SyncStatus.SetAside or SyncStatus.Failed
            && config.MaxDownloadsPerItem > 0
-           && record.AcquireAttempts.Count >= config.MaxDownloadsPerItem;
+           && Spent(record, config, utcNow) >= config.MaxDownloadsPerItem;
+
+    private static int Spent(SyncRecord record, PluginConfiguration config, DateTime utcNow)
+    {
+        if (config.RetryDownloadsAfterDays <= 0)
+        {
+            return 0;
+        }
+
+        var since = utcNow - config.RetryDownloadsAfter();
+        return record.AcquireAttempts.Count(attempt => attempt.AttemptedUtc >= since);
+    }
+
+    // ! Where the providers answered in full and offered nothing usable. Zero days waits not at
+    //   all, and changing what the search asks for releases the row whatever the clock says.
+    internal static bool SearchedRecently(SyncRecord record, PluginConfiguration config, DateTime utcNow)
+        => config.RetryDownloadsAfterDays > 0
+           && record.Status == SyncStatus.SetAside
+           && record.SearchedUtc is { } searched
+           && record.SearchStamp == config.SearchStamp()
+           && !Lapsed(searched, config, utcNow);
+
+    // A stamp in the future is a clock that moved, and is read as lapsed.
+    private static bool Lapsed(DateTime stamp, PluginConfiguration config, DateTime utcNow)
+        => stamp == default || utcNow < stamp || utcNow - stamp >= config.RetryDownloadsAfter();
 
     // ! A refusal the audio caused is not an engine failure. Widening the tolerance retries it.
     private static bool ToleranceWouldNowAccept(SyncRecord record, PluginConfiguration config)
@@ -1348,6 +1440,26 @@ public class SyncOrchestrator
         long? rejectedOffsetMs = null,
         SubtitleStageKind kind = SubtitleStageKind.Sync)
     {
+        MarkFailed(record, message, rejectedOffsetMs, kind);
+        SafeUpsert(record, kind);
+        return record;
+    }
+
+    // ! Storing each judgement of a multi-candidate row walks the item between panel cards
+    //   mid-scan. The acquire loop stores its own outcome once, when it stops.
+    private void FailCandidate(
+        SyncRecord record,
+        string? message,
+        long? rejectedOffsetMs = null,
+        SubtitleStageKind kind = SubtitleStageKind.Sync)
+        => MarkFailed(record, message, rejectedOffsetMs, kind);
+
+    private void MarkFailed(
+        SyncRecord record,
+        string? message,
+        long? rejectedOffsetMs,
+        SubtitleStageKind kind)
+    {
         record.Status = SyncStatus.Failed;
         record.RejectedOffsetMs = rejectedOffsetMs;
         record.AppliedOffsetMs = null;
@@ -1360,8 +1472,6 @@ public class SyncOrchestrator
             ? "Failed: the sync did not complete."
             : message;
         LogOutcome(record);
-        SafeUpsert(record, kind);
-        return record;
     }
 
     // ! One line per refusing branch, worded as the field-log tools match them.

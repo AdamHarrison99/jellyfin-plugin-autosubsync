@@ -174,7 +174,7 @@ void Run()
         record.Status = SyncStatus.Failed;
         record.RejectedOffsetMs = 4_000;
 
-        return SyncOrchestrator.IsExhausted(record, target, Config())
+        return SyncOrchestrator.IsExhausted(record, target, Config(), DateTime.UtcNow)
             ? null
             : "an unchanged failure was retried";
     });
@@ -194,7 +194,7 @@ void Run()
             record.Status = SyncStatus.Failed;
             record.RejectedOffsetMs = stored;
 
-            if (!SyncOrchestrator.IsExhausted(record, target, config))
+            if (!SyncOrchestrator.IsExhausted(record, target, config, DateTime.UtcNow))
             {
                 reopened.Add(stored);
             }
@@ -212,7 +212,7 @@ void Run()
         record.Status = SyncStatus.Failed;
         record.RejectedOffsetMs = SyncVerifier.TypicalLeadMs;
 
-        return SyncOrchestrator.IsExhausted(record, target, Config())
+        return SyncOrchestrator.IsExhausted(record, target, Config(), DateTime.UtcNow)
             ? "a refusal the check would now accept stayed parked"
             : null;
     });
@@ -510,11 +510,38 @@ void AcquireGates()
         var (record, target) = Acquired();
         record.Status = SyncStatus.Failed;
         record.OutputPath = null;
+        record.UpdatedUtc = DateTime.UtcNow;
         record.Message = "Failed: every subtitle offered for this language was refused.";
 
-        return SyncOrchestrator.IsExhausted(record, target, Config())
+        return SyncOrchestrator.IsExhausted(record, target, Config(), DateTime.UtcNow)
             ? null
             : "an exhausted row would re-search on the next scan";
+    });
+
+    // ! The retry setting is the second release, and it reaches a download alone.
+    Check("an exhausted acquire row past the retry window searches again", () =>
+    {
+        var config = Config();
+        var (record, target) = Acquired();
+        record.Status = SyncStatus.Failed;
+        record.OutputPath = null;
+        record.UpdatedUtc = DateTime.UtcNow.AddDays(-config.RetryDownloadsAfterDays - 1);
+
+        return SyncOrchestrator.IsExhausted(record, target, config, DateTime.UtcNow)
+            ? "a row past its retry window stayed parked"
+            : null;
+    });
+
+    Check("a sync failure is never retried on the clock", () =>
+    {
+        var (record, target) = Placed(SubtitleProvenance.Retimed, backup: true);
+        record.Status = SyncStatus.Failed;
+        record.RejectedOffsetMs = 4_000;
+        record.UpdatedUtc = DateTime.UtcNow.AddDays(-400);
+
+        return SyncOrchestrator.IsExhausted(record, target, Config(), DateTime.UtcNow)
+            ? null
+            : "an old sync failure was retried on the same bytes";
     });
 
     Check("a refusal the widened bound now accepts reopens the search", () =>
@@ -522,9 +549,10 @@ void AcquireGates()
         var (record, target) = Acquired();
         record.Status = SyncStatus.Failed;
         record.OutputPath = null;
+        record.UpdatedUtc = DateTime.UtcNow;
         record.RejectedOffsetMs = SyncVerifier.TypicalLeadMs;
 
-        return SyncOrchestrator.IsExhausted(record, target, Config())
+        return SyncOrchestrator.IsExhausted(record, target, Config(), DateTime.UtcNow)
             ? "a refusal the check would now accept stayed parked"
             : null;
     });
@@ -534,39 +562,172 @@ void AcquireGates()
 
     // ! A set-aside row is never exhausted, so nothing else bounds what it spends over time.
     Check("a set-aside row that spent the limit is parked", () =>
-        SyncOrchestrator.BudgetSpent(SetAside(3), Config())
+        SyncOrchestrator.BudgetSpent(SetAside(3), Config(), DateTime.UtcNow)
             ? null
             : "a spent budget would buy three more on the next scan");
 
     Check("a set-aside row under the limit still searches", () =>
-        SyncOrchestrator.BudgetSpent(SetAside(2), Config())
+        SyncOrchestrator.BudgetSpent(SetAside(2), Config(), DateTime.UtcNow)
             ? "a row with budget left was parked"
             : null);
 
-    // ! The only release there is. Retry failed subtitles reopens Failed rows alone.
     Check("raising the limit releases a parked row", () =>
-        SyncOrchestrator.BudgetSpent(SetAside(3), new PluginConfiguration { MaxDownloadsPerItem = 6 })
+        SyncOrchestrator.BudgetSpent(
+            SetAside(3),
+            new PluginConfiguration { MaxDownloadsPerItem = 6 },
+            DateTime.UtcNow)
             ? "raising the limit left the row parked"
             : null);
 
     Check("an unlimited budget never parks a row", () =>
-        SyncOrchestrator.BudgetSpent(SetAside(9), new PluginConfiguration { MaxDownloadsPerItem = 0 })
+        SyncOrchestrator.BudgetSpent(
+            SetAside(9),
+            new PluginConfiguration { MaxDownloadsPerItem = 0 },
+            DateTime.UtcNow)
             ? "an unlimited budget was treated as spent"
             : null);
 
     // ! A suppressed track is set aside too, and it has never bought anything.
     Check("a suppression is not a spent budget", () =>
-        SyncOrchestrator.BudgetSpent(SetAside(0), Config())
+        SyncOrchestrator.BudgetSpent(SetAside(0), Config(), DateTime.UtcNow)
             ? "a track a setting declined to process was parked as if it had downloaded"
             : null);
+
+    // ! The allowance is counted over the retry window, so a lapsed one opens a fresh window.
+    //   The acquirer's own ledger check is what stops it buying the same files again.
+    Check("an allowance older than the retry window is spent again", () =>
+    {
+        var config = Config();
+        var stale = SetAside(3, DateTime.UtcNow.AddDays(-config.RetryDownloadsAfterDays - 1));
+
+        return SyncOrchestrator.BudgetSpent(stale, config, DateTime.UtcNow)
+            ? "a lapsed allowance stayed parked for ever"
+            : null;
+    });
+
+    // ! Zero is no wait at all, at both gates. A budget counted over an empty window is empty.
+    Check("no cooldown means the allowance never parks a row", () =>
+    {
+        var config = Config();
+        config.RetryDownloadsAfterDays = 0;
+
+        return SyncOrchestrator.BudgetSpent(SetAside(9), config, DateTime.UtcNow)
+            ? "a row was parked under a zero cooldown"
+            : null;
+    });
 
     Check("a kept download is not parked by its own ledger", () =>
     {
         var (record, _) = Acquired();
-        record.AcquireAttempts.Add(new AcquireAttempt { Outcome = AcquireAttemptOutcome.Kept });
+        record.AcquireAttempts.Add(new AcquireAttempt
+        {
+            AttemptedUtc = DateTime.UtcNow,
+            Outcome = AcquireAttemptOutcome.Kept
+        });
 
-        return SyncOrchestrator.BudgetSpent(record, new PluginConfiguration { MaxDownloadsPerItem = 1 })
+        return SyncOrchestrator.BudgetSpent(
+            record,
+            new PluginConfiguration { MaxDownloadsPerItem = 1 },
+            DateTime.UtcNow)
             ? "a synced row was parked and would never be checked again"
+            : null;
+    });
+
+    Console.WriteLine();
+    Console.WriteLine("When is a language asked about again?");
+
+    // ! The whole point of the stamp. A scan on its own must not spend the API call twice.
+    Check("a language answered a moment ago is not searched again", () =>
+    {
+        var config = new PluginConfiguration();
+        var record = Searched(config, DateTime.UtcNow.AddDays(-1));
+
+        return SyncOrchestrator.SearchedRecently(record, config, DateTime.UtcNow)
+            ? null
+            : "the row would be searched again on the next scan";
+    });
+
+    Check("the cooldown lapses", () =>
+    {
+        var config = new PluginConfiguration();
+        var record = Searched(config, DateTime.UtcNow - config.RetryDownloadsAfter().Add(TimeSpan.FromHours(1)));
+
+        return SyncOrchestrator.SearchedRecently(record, config, DateTime.UtcNow)
+            ? "a lapsed row stayed parked"
+            : null;
+    });
+
+    // ! Zero is the setting's own off switch, and it must reach this gate as well as the budget.
+    Check("no cooldown searches every scan", () =>
+    {
+        var config = new PluginConfiguration { RetryDownloadsAfterDays = 0 };
+        var record = Searched(config, DateTime.UtcNow);
+
+        return SyncOrchestrator.SearchedRecently(record, config, DateTime.UtcNow)
+            ? "a row was parked under a zero cooldown"
+            : null;
+    });
+
+    // ! A clock that moved backwards must not park a row until it catches up.
+    Check("a stamp in the future is read as lapsed", () =>
+    {
+        var config = new PluginConfiguration();
+        var record = Searched(config, DateTime.UtcNow.AddDays(30));
+
+        return SyncOrchestrator.SearchedRecently(record, config, DateTime.UtcNow)
+            ? "a row stamped in the future was parked"
+            : null;
+    });
+
+    // ! A wall leaves the time stamped and the search stamp null. Reading the time alone parks
+    //   a language no provider ever answered for.
+    Check("a row closed without an answer is never parked", () =>
+    {
+        var config = new PluginConfiguration();
+        var record = Searched(config, DateTime.UtcNow);
+        record.SearchStamp = null;
+
+        return SyncOrchestrator.SearchedRecently(record, config, DateTime.UtcNow)
+            ? "a walled row was parked as if the providers had answered"
+            : null;
+    });
+
+    // ! The retry gate must read the acquire loop's own stamp. UpdatedUtc is rewritten by any
+    //   later write to the row, which would postpone the retry with nothing to show for it.
+    Check("a later write to the row does not postpone the retry", () =>
+    {
+        var config = Config();
+        var (record, target) = Acquired();
+        record.Status = SyncStatus.Failed;
+        record.OutputPath = null;
+        record.SearchedUtc = DateTime.UtcNow.AddDays(-config.RetryDownloadsAfterDays - 1);
+        record.UpdatedUtc = DateTime.UtcNow;
+
+        return SyncOrchestrator.RetryDue(record, target, config, DateTime.UtcNow)
+            ? null
+            : "a row past its window was held by an unrelated write";
+    });
+
+    // ! The answer was about a different question. Parking on it hides the new one.
+    Check("changing what the search asks for releases the row at once", () =>
+    {
+        var config = new PluginConfiguration();
+        var record = Searched(config, DateTime.UtcNow);
+
+        config.AcquireHearingImpaired = !config.AcquireHearingImpaired;
+
+        return SyncOrchestrator.SearchedRecently(record, config, DateTime.UtcNow)
+            ? "the row stayed parked under settings it was never searched under"
+            : null;
+    });
+
+    Check("a row that never recorded an answer is never parked", () =>
+    {
+        var config = new PluginConfiguration();
+        var record = new SyncRecord { Status = SyncStatus.SetAside };
+
+        return SyncOrchestrator.SearchedRecently(record, config, DateTime.UtcNow)
+            ? "a row with no recorded search was parked"
             : null;
     });
 
@@ -581,7 +742,8 @@ void AcquireGates()
                      AcquireResult.NothingOffered,
                      AcquireResult.HearingImpairedOnly,
                      AcquireResult.AllFiltered,
-                     AcquireResult.ProvidersRetired
+                     AcquireResult.ProvidersRetired,
+                     AcquireResult.CapReached
                  })
         {
             if (SyncOrchestrator.StageFor(result) != StageOutcome.Skipped)
@@ -593,18 +755,12 @@ void AcquireGates()
         return null;
     });
 
+    // ! Only a list the check saw and refused. A spent allowance stopped the item short of it.
     Check("a download bought and refused is a failure", () =>
     {
-        foreach (var result in new[]
-                 {
-                     AcquireResult.Exhausted,
-                     AcquireResult.CapReached
-                 })
+        if (SyncOrchestrator.StageFor(AcquireResult.Exhausted) != StageOutcome.Failed)
         {
-            if (SyncOrchestrator.StageFor(result) != StageOutcome.Failed)
-            {
-                return $"{result} was not a failure";
-            }
+            return "a refused list was not a failure";
         }
 
         return SyncOrchestrator.StageFor(AcquireResult.Kept) == StageOutcome.Succeeded
@@ -613,8 +769,16 @@ void AcquireGates()
     });
 }
 
+// A row the providers answered in full, set aside at the given moment.
+static SyncRecord Searched(PluginConfiguration config, DateTime when) => new()
+{
+    Status = SyncStatus.SetAside,
+    SearchedUtc = when,
+    SearchStamp = config.SearchStamp()
+};
+
 // A row the acquire path set aside, carrying the downloads it already paid for.
-static SyncRecord SetAside(int paid)
+static SyncRecord SetAside(int paid, DateTime? attemptedUtc = null)
 {
     var record = new SyncRecord { Status = SyncStatus.SetAside };
 
@@ -623,6 +787,7 @@ static SyncRecord SetAside(int paid)
         record.AcquireAttempts.Add(new AcquireAttempt
         {
             SubtitleId = i.ToString(CultureInfo.InvariantCulture),
+            AttemptedUtc = attemptedUtc ?? DateTime.UtcNow,
             Outcome = AcquireAttemptOutcome.HearingImpaired
         });
     }

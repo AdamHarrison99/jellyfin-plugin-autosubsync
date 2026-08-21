@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 
 namespace Jellyfin.Plugin.AutoSubSync.Models;
@@ -5,28 +6,47 @@ namespace Jellyfin.Plugin.AutoSubSync.Models;
 // Reads a stored outcome the way the status panel groups it.
 public static class SyncOutcome
 {
-    // ! The one refusal RequireAudioConfirmation raises. Every other refusal stands without it.
+    // ! The one refusal RequireAudioConfirmation raises on a subtitle the item already carries.
+    //   Every other refusal stands without it.
     public const string NoVerdictRefusal =
-        "Rejected: the audio check reached no verdict on this title.";
+        "Rejected: the audio check reached no verdict on the subtitle this item already has.";
 
     // ! The same refusal reached after buying the whole list. Grouped with the single-candidate
     //   form, or the card empties the moment an item is offered more than one subtitle.
-    public const string NoVerdictExhausted =
-        "Rejected: the audio check reached no verdict on any subtitle offered for this language.";
+    public const string NoVerdictExhaustedPrefix =
+        "Rejected: the audio check reached no verdict on any subtitle offered for this language";
 
-    // ! Rows written before the card existed carry the old wording. Reading the current string
+    // ! Rows written before the current wording carry an older one. Reading the current string
     //   alone moves every one of them onto the card that did not cause them.
-    private const string NoVerdictRefusalLegacy =
-        "Rejected: the audio check reached no verdict on this title — rejected as inconclusive.";
+    private static readonly string[] LegacyNoVerdict =
+    {
+        "Rejected: the audio check reached no verdict on this title.",
+        "Rejected: the audio check reached no verdict on this title — rejected as inconclusive."
+    };
+
+    // The language is the one the offers were searched for; a target without one omits it.
+    public static string NoVerdictExhausted(string? language)
+        => string.IsNullOrWhiteSpace(language)
+            ? NoVerdictExhaustedPrefix + "."
+            : NoVerdictExhaustedPrefix + ": " + language.Trim() + ".";
 
     // ! Not RejectedOffsetMs: a refusal that reached no verdict carries no offset.
     public static bool IsAudioRefusal(SyncRecord record)
         => record.Status == SyncStatus.Failed && (record.RefusedByAudio ?? InferredRefusal(record));
 
     // ! A setting caused this one, so it is counted apart from the refusals that stand alone.
+    //   Prefix, not equality: the exhausted form names the language it searched.
     public static bool IsInconclusiveRefusal(SyncRecord record)
         => IsAudioRefusal(record)
-           && record.Message is NoVerdictRefusal or NoVerdictExhausted or NoVerdictRefusalLegacy;
+           && record.Message is { } message
+           && (message == NoVerdictRefusal
+               || message.StartsWith(NoVerdictExhaustedPrefix, StringComparison.Ordinal)
+               || Array.IndexOf(LegacyNoVerdict, message) >= 0);
+
+    // ! What the audio check refused, wherever the row ended up. A set-aside row still carries
+    //   the Verify refusals of candidates its allowance stopped it acting on.
+    public static bool CarriesAudioRefusal(SyncRecord record)
+        => IsAudioRefusal(record) || record.Status == SyncStatus.SetAside;
 
     // ! Only a measured skip is "already in sync". A source that vanished measured nothing.
     public static bool NothingToDo(SyncRecord record)

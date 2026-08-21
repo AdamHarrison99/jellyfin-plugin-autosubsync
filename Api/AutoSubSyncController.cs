@@ -339,7 +339,7 @@ public class AutoSubSyncController : ControllerBase
                 Failed = byKind[step.Kind].Count(x =>
                     x.Stage.Outcome == StageOutcome.Failed
                     && (step.Kind is not (SubtitleStageKind.Verify or SubtitleStageKind.Acquire)
-                        || !SyncOutcome.IsAudioRefusal(x.Record))),
+                        || !SyncOutcome.CarriesAudioRefusal(x.Record))),
                 AverageMs = AverageMs(byKind[step.Kind].Select(x => x.Stage))
             })
             .ToList();

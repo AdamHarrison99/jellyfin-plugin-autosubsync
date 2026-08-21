@@ -181,6 +181,54 @@ Check("a legacy row falls back to its offset and stages", () =>
     Expect(!SyncOutcome.IsAudioRefusal(neither), "a legacy tool failure counted as a refusal");
 });
 
+// ! Grouping the panel on a sentence makes every past wording of it part of the contract. A row
+//   written under an older one still belongs on the card that caused it.
+Check("every wording of the no-verdict refusal reaches the same card", () =>
+{
+    foreach (var message in new[]
+             {
+                 SyncOutcome.NoVerdictRefusal,
+                 SyncOutcome.NoVerdictExhausted("eng"),
+                 SyncOutcome.NoVerdictExhausted(null),
+                 "Rejected: the audio check reached no verdict on this title.",
+                 "Rejected: the audio check reached no verdict on this title — rejected as inconclusive."
+             })
+    {
+        var record = new SyncRecord
+        {
+            Status = SyncStatus.Failed,
+            RefusedByAudio = true,
+            Message = message
+        };
+
+        Expect(SyncOutcome.IsInconclusiveRefusal(record), $"\"{message}\" missed the card");
+    }
+
+    var measured = new SyncRecord
+    {
+        Status = SyncStatus.Failed,
+        RefusedByAudio = true,
+        Message = "Rejected: every subtitle offered for this language was refused by the audio check."
+    };
+
+    Expect(!SyncOutcome.IsInconclusiveRefusal(measured), "a measured refusal reached the card");
+});
+
+// ! The stage table excludes a refusal from Failed on this predicate alone. A row the allowance
+//   set aside still carries the Verify refusals of the candidates it did judge.
+Check("a set-aside row's refusals are not counted as tool failures", () =>
+{
+    var record = new SyncRecord { Status = SyncStatus.SetAside };
+    record.RecordStage(SubtitleStageKind.Verify, StageOutcome.Failed);
+
+    Expect(SyncOutcome.CarriesAudioRefusal(record), "a set-aside refusal counted as a failure");
+
+    var broken = new SyncRecord { Status = SyncStatus.Failed, RefusedByAudio = false };
+    broken.RecordStage(SubtitleStageKind.Convert, StageOutcome.Failed);
+
+    Expect(!SyncOutcome.CarriesAudioRefusal(broken), "an OCR failure counted as a refusal");
+});
+
 Check("only a failed record can be an audio refusal", () =>
 {
     var record = new SyncRecord { Status = SyncStatus.Skipped, RefusedByAudio = true };

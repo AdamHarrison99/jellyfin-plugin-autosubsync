@@ -51,25 +51,24 @@ reported as unsupported and everything else works normally.
 libraries, run the "Full Library Sync" task with dry run still on, and read the results before
 turning it off.
 
-Every setting is explained on the settings page. In short:
-
 | Setting | Default | |
 | --- | --- | --- |
 | Dry run mode | On | Finds and records everything, changes nothing. |
-| Only sync when the audio checks and voice detection are conclusive | On | Leaves the subtitle alone when neither pass can confirm the result. |
+| Only sync when the audio checks are conclusive | On | Leaves a subtitle alone when neither the audio check nor voice detection can decide. Off, the sync engine's own score decides. |
 | Libraries | *none* | Nothing runs until you pick some. |
 | Process external subtitle files | On | Sidecar files next to your media. |
-| Process embedded subtitle tracks | Off | Extracted to a new file; the video is never modified, so Jellyfin then lists both. |
-| Process embedded tracks when an external of the same language exists | Off | Off keeps the list short. On brings back "Signs &amp; Songs" tracks, which carry the same language. |
+| Process embedded subtitle tracks | Off | Extracted to a new file. The video is never modified, so Jellyfin lists both. |
+| Process embedded tracks when an external of the same language exists | Off | Off keeps the list short. On also syncs "Signs &amp; Songs" tracks. |
 | Convert image-based subtitles to text | Off | OCR for PGS, VobSub, and DVB. Slow, never perfect, needs Tesseract. |
-| Run the OCR when a text subtitle of the same language exists | Off | Off skips minutes of OCR per track a sidecar already covers. On converts every image track. |
-| Remove hearing-impaired tags | Off | Only on tracks that look hearing-impaired; a stripped track loses `sdh` from its name. |
-| Remove duplicate external subtitles | Off | Collapses external files of one language holding the same text and styling. Backed up first. |
+| Run the OCR when a text subtitle of the same language exists | Off | Off skips minutes of OCR per track a sidecar already covers. |
+| Remove hearing-impaired tags | Off | Strips `[door creaks]`, `(SIGHS)`, and speaker labels from what is written. |
+| Remove duplicate external subtitles | Off | Collapses external files holding the same text and styling. Backed up first. |
 | Languages | *all* | e.g. `eng, spa` or `en, es`. Two- and three-letter forms mix freely. |
-| Download missing subtitles | Off | Only where a wanted language has nothing at all. Needs a subtitle provider plugin installed; **every candidate it tries spends your provider account's download allowance, including the ones the audio check rejects**. |
-| Maximum downloads per item | `3` | How many candidates one item may try before giving up on that language. `0` is unlimited, not off. |
+| Download missing subtitles | Off | Only where a wanted language has nothing at all. Needs a provider plugin installed; **every candidate tried spends your provider allowance, including rejected ones**. |
+| Maximum downloads per item | `3` | How many candidates one item may download before giving up on that language. `0` is unlimited, not off. Counts over the retry window below. |
+| Wait before trying an item again | `7` days | How long an item that came away with nothing is left alone before the providers are asked again. Files it has already downloaded are never downloaded twice. `0` is no wait, max `365`. |
 | Download even when the video has an embedded track | Off | On aims the feature at far more of your library — most items without a sidecar do have an embedded track. |
-| Accept hearing-impaired subtitles | Off | On makes them acceptable, never preferred. |
+| Accept hearing-impaired subtitles | Off | On makes them acceptable, never preferred. Worth turning on if *Remove hearing-impaired tags* is on. |
 | Only save downloads when the audio checks are conclusive | On | On keeps downloading candidates until the check reaches a good verdict, up to the download limit. Off stops the item at the first result the check doesn't outright reject. An item that never reaches a verdict is listed under *rejected as inconclusive*. No effect unless *Only sync when the audio checks are conclusive* is on. |
 | Additional download providers | *none* | Both a priority order and the way to tell the plugin an unrecognised provider can download. |
 | Where to write synced external subtitles | Overwrite | Replaces the file in place, always backing it up first. Side-by-side writes a new marked file. |
@@ -79,8 +78,8 @@ Every setting is explained on the settings page. In short:
 
 A subtitle is synced once and then left alone — but changing a setting that would have produced a
 different result puts the affected subtitles back in the queue. **Retry failed subtitles** does the
-same for anything that failed or was rejected by the audio check, and starts a full library sync,
-without waiting for a setting to change.
+same for anything that failed or was rejected by the audio check, releases any item waiting out its
+retry window, and starts a full library sync.
 
 Files the plugin writes alongside your originals carry an autosubsync marker in their name. Overwritten files keep their original name — the backup vault is what makes those reversible.
 
@@ -89,9 +88,10 @@ Files the plugin writes alongside your originals carry an autosubsync marker in 
 Every subtitle is scored against the video's own audio, before and after syncing. It costs a few
 seconds against a sync that takes minutes.
 
-Some titles cannot be measured by any of the check passes; a film under a continuous score may never give a
-clear answer. Those are left alone by default — all that remains to judge them is the sync engine's
-own opinion of its work, and that is sometimes confidently wrong. Untick **Only sync when the audio checks are conclusive** to let it decide instead.
+Some titles cannot be measured at all — a film under a continuous score may never give a clear
+answer. Those are left alone by default; all that remains to judge them is the sync engine's own
+opinion, which is sometimes confidently wrong. Untick **Only sync when the audio checks are
+conclusive** to let it decide instead.
 
 ## Undoing everything
 

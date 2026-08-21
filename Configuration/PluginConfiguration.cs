@@ -78,6 +78,18 @@ public class PluginConfiguration : BasePluginConfiguration
 
     public const int DefaultMaxDownloadsPerItem = 3;
 
+    // ! How long an item that came away with nothing waits before the providers are asked again.
+    //   Zero waits not at all, and every scan asks.
+    public int RetryDownloadsAfterDays { get; set; } = DefaultRetryDownloadsAfterDays;
+
+    public const int DefaultRetryDownloadsAfterDays = 7;
+
+    public const int MaxRetryDownloadsAfterDays = 365;
+
+    // The window the allowance is counted over, and the wait before a search is worth repeating.
+    public TimeSpan RetryDownloadsAfter()
+        => TimeSpan.FromDays(Math.Clamp(RetryDownloadsAfterDays, 0, MaxRetryDownloadsAfterDays));
+
     // Provider names in the order they are asked, and the only way to name an unknown downloader.
     public string[] AdditionalDownloadProviders { get; set; } = [];
 
@@ -127,12 +139,26 @@ public class PluginConfiguration : BasePluginConfiguration
             '|',
             CheckRevision,
             DryRunMode ? "dry" : "live",
-            RequireAudioConfirmation ? "confirmed" : "scored",
+            // ! Reads "confirmed" wherever the pair is at its defaults, so an upgrade restamps
+            //   nothing. Only the relaxed download gate produces a term of its own.
+            RequireAudioConfirmation
+                ? (RequireConclusiveDownloads ? "confirmed" : "confirmed-loose")
+                : "scored",
             RemoveHearingImpairedTags ? "hi-" : "hi+",
             ConvertImageSubtitles ? "ocr+" : "ocr-",
             ExternalWriteMode,
             OutputEncoding,
             MarkerSuffix);
+
+    // ! What a fresh search would ask for. An answer recorded under anything else says nothing
+    //   about what the providers would offer now.
+    public string SearchStamp()
+        => string.Join(
+            '|',
+            AcquireHearingImpaired ? "hi+" : "hi-",
+            AcquireWhenEmbeddedExists ? "emb+" : "emb-",
+            string.Join(',', LanguageAllowList),
+            string.Join(',', AdditionalDownloadProviders));
 
     // Resolves AutoConcurrency to the ceiling the probe climbs towards.
     public int ResolveMaxConcurrentSyncs()
@@ -156,6 +182,9 @@ public class PluginConfiguration : BasePluginConfiguration
 
         // ! Floor of zero, which reads as unlimited.
         MaxDownloadsPerItem = Math.Max(MaxDownloadsPerItem, 0);
+
+        // ! Floor of zero, which reads as no wait at all.
+        RetryDownloadsAfterDays = Math.Clamp(RetryDownloadsAfterDays, 0, MaxRetryDownloadsAfterDays);
 
         // ! Must never be empty.
         MarkerSuffix = SanitizeMarker(MarkerSuffix);
