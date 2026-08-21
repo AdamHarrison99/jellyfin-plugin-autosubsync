@@ -84,7 +84,10 @@ public class AutoSubSyncController : ControllerBase
             MedianAppliedOffsetMs = MedianAppliedOffset(records),
             // A result the audio refused is not a tool failure, and the two are not fixed alike.
             Failed = records.Count(r => r.Status == SyncStatus.Failed && !SyncOutcome.IsAudioRefusal(r)),
-            Rejected = records.Count(SyncOutcome.IsAudioRefusal),
+            // ! A setting raised these. Folded in with the rest they read as the check's own doing.
+            Rejected = records.Count(r =>
+                SyncOutcome.IsAudioRefusal(r) && !SyncOutcome.IsInconclusiveRefusal(r)),
+            Inconclusive = records.Count(SyncOutcome.IsInconclusiveRefusal),
             Skipped = records.Count(SyncOutcome.NothingToDo),
             SourceMissing = records.Count(r =>
                 r.Status == SyncStatus.Skipped && !SyncOutcome.NothingToDo(r)),
@@ -105,7 +108,9 @@ public class AutoSubSyncController : ControllerBase
                 .ToList(),
 
             // Split the same way the cards are; one list over both would total neither.
-            RefusalReasons = Reasons(records.Where(SyncOutcome.IsAudioRefusal)),
+            RefusalReasons = Reasons(records.Where(r =>
+                SyncOutcome.IsAudioRefusal(r) && !SyncOutcome.IsInconclusiveRefusal(r))),
+            InconclusiveReasons = Reasons(records.Where(SyncOutcome.IsInconclusiveRefusal)),
             FailureReasons = Reasons(records.Where(r =>
                 r.Status == SyncStatus.Failed && !SyncOutcome.IsAudioRefusal(r)))
         });
@@ -303,27 +308,6 @@ public class AutoSubSyncController : ControllerBase
            && record.Stages.Exists(s =>
                s.Kind == SubtitleStageKind.Acquire && s.Outcome == StageOutcome.Succeeded);
 
-    // ! Fetches, not records — the only row on the table that counts them. One target can buy
-    //   and refuse several candidates, and the ledger is what holds them.
-    private static object AcquireRow(List<SyncRecord> records)
-    {
-        var attempts = records.SelectMany(r => r.AcquireAttempts).ToList();
-        var stages = records
-            .SelectMany(r => r.Stages.Where(s => s.Kind == SubtitleStageKind.Acquire))
-            .ToList();
-
-        return new
-        {
-            Kind = SubtitleStageKind.Acquire.ToString(),
-            Succeeded = attempts.Count(a => a.Outcome == AcquireAttemptOutcome.Kept),
-
-            // Targets that fetched nothing at all: nothing offered, or everything filtered out.
-            Skipped = stages.Count(s => s.Outcome == StageOutcome.Skipped),
-            Failed = attempts.Count(a => a.Outcome != AcquireAttemptOutcome.Kept),
-            AverageMs = AverageMs(stages)
-        };
-    }
-
     // ! Only steps the settings actually turn on.
     private static List<object> SummarizeStages(List<SyncRecord> records, PluginConfiguration config)
     {
@@ -332,8 +316,10 @@ public class AutoSubSyncController : ControllerBase
             .SelectMany(r => r.Stages.Select(s => (Record: r, Stage: s)))
             .ToLookup(x => x.Stage.Kind);
 
+        // ! Acquisition first. It runs before anything else the pipeline does to a subtitle.
         var pipeline = new[]
         {
+            (Kind: SubtitleStageKind.Acquire, On: config.AcquireMissingSubtitles),
             (Kind: SubtitleStageKind.Convert, On: config.ConvertImageSubtitles),
             (Kind: SubtitleStageKind.Sync, On: true),
             (Kind: SubtitleStageKind.Verify, On: true),
@@ -341,29 +327,22 @@ public class AutoSubSyncController : ControllerBase
             (Kind: SubtitleStageKind.Deduplicate, On: config.DeduplicateSubtitles)
         };
 
-        var rows = pipeline
+        return pipeline
             .Where(step => step.On)
             .Select(step => (object)new
             {
                 Kind = step.Kind.ToString(),
                 Succeeded = byKind[step.Kind].Count(x => x.Stage.Outcome == StageOutcome.Succeeded),
                 Skipped = byKind[step.Kind].Count(x => x.Stage.Outcome == StageOutcome.Skipped),
-                // ! A refusal is not a failure. Only Verify can hold one, and it is reported on
-                //   its own card and reason block, never here.
+                // ! A refusal is not a failure. Verify and Acquire can each hold one, and it is
+                //   reported on its own card and reason block, never here.
                 Failed = byKind[step.Kind].Count(x =>
                     x.Stage.Outcome == StageOutcome.Failed
-                    && (step.Kind != SubtitleStageKind.Verify || !SyncOutcome.IsAudioRefusal(x.Record))),
+                    && (step.Kind is not (SubtitleStageKind.Verify or SubtitleStageKind.Acquire)
+                        || !SyncOutcome.IsAudioRefusal(x.Record))),
                 AverageMs = AverageMs(byKind[step.Kind].Select(x => x.Stage))
             })
             .ToList();
-
-        // ! First. Acquisition runs before anything else the pipeline does to a subtitle.
-        if (config.AcquireMissingSubtitles)
-        {
-            rows.Insert(0, AcquireRow(records));
-        }
-
-        return rows;
     }
 
     // ! Mean over the runs that were timed, never a lifetime total; a total only ever grows.

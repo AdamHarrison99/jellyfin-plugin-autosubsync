@@ -2,11 +2,13 @@ using Jellyfin.Plugin.AutoSubSync.Subtitles;
 
 namespace Jellyfin.Plugin.AutoSubSync.Services;
 
-// Providers that answered with a wall this sweep, and will not be asked again until the next one.
+// Providers, and the internal sources of one, that answered with a wall this sweep. Neither is
+// asked again until the next sweep.
 public class ProviderRetirement
 {
     private readonly Lock _gate = new();
     private readonly Dictionary<string, string> _retired = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _sources = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _noted = new(StringComparer.OrdinalIgnoreCase);
 
     public void Reset()
@@ -14,6 +16,7 @@ public class ProviderRetirement
         lock (_gate)
         {
             _retired.Clear();
+            _sources.Clear();
             _noted.Clear();
         }
     }
@@ -37,11 +40,30 @@ public class ProviderRetirement
         }
     }
 
+    // One internal source of an aggregator. Its siblings go on being asked.
+    public void RetireSource(string provider, string source, string reason)
+    {
+        lock (_gate)
+        {
+            _sources[Key(provider, source)] = reason;
+        }
+    }
+
     public string? ReasonFor(string provider)
     {
         lock (_gate)
         {
             return _retired.GetValueOrDefault(provider.Trim());
+        }
+    }
+
+    // ! A walled provider carries every source with it, so the whole-provider key is read first.
+    public string? ReasonFor(string provider, string? source)
+    {
+        lock (_gate)
+        {
+            return _retired.GetValueOrDefault(provider.Trim())
+                ?? (source is null ? null : _sources.GetValueOrDefault(Key(provider, source)));
         }
     }
 
@@ -100,4 +122,9 @@ public class ProviderRetirement
         => error is AggregateException group
             ? group.InnerExceptions
             : error.InnerException is { } inner ? [inner] : [];
+
+    // ! Provider names hold slashes and spaces. Joining on a character no name can carry is what
+    //   stops one pair's key colliding with another's.
+    private static string Key(string provider, string source)
+        => provider.Trim() + '\n' + source.Trim();
 }

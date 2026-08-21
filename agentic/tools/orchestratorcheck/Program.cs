@@ -331,6 +331,68 @@ void Decisions()
         return d.Kind == SyncDecisionKind.LowEngineScore ? null : $"wrong branch: {d.Kind}";
     });
 
+    // ! The setting the maintainer specified: off, a download nothing refused is kept.
+    Check("a download abstention falls to the engine score once the download setting is off", () =>
+    {
+        var d = Decide(
+            Inconclusive(),
+            Moved(400),
+            score: SyncDecisionMaker.MinimumEngineScore,
+            require: false);
+
+        return d.Accepted ? null : $"a scored download was refused: {d.Message}";
+    });
+
+    // ! "Not outright rejected" is every gate, not just the verdict. The floor still applies.
+    Check("the score floor still refuses a download the setting let through", () =>
+    {
+        var d = Decide(
+            Inconclusive(),
+            Moved(400),
+            score: SyncDecisionMaker.MinimumEngineScore - 0.1,
+            require: false);
+
+        if (d.Accepted) { return "a download under the score floor was accepted"; }
+
+        return d.Kind == SyncDecisionKind.LowEngineScore ? null : $"wrong branch: {d.Kind}";
+    });
+
+    // ! One caller only. An unset override must leave the sync path reading the sync setting.
+    Check("the sync path is untouched by the download override", () =>
+    {
+        var d = SyncDecisionMaker.Decide(
+            Inconclusive(),
+            Moved(400),
+            () => 99,
+            scoreWanted: false,
+            Config(confirm: true, conclusiveDownloads: false));
+
+        if (d.Accepted) { return "the sync path read the download setting"; }
+
+        return d.Kind == SyncDecisionKind.NoVerdict ? null : $"wrong branch: {d.Kind}";
+    });
+
+    // ! The description promises no effect while the sync gate is off, in both directions.
+    Check("the download setting does nothing while audio confirmation is off", () =>
+    {
+        foreach (var conclusive in new[] { true, false })
+        {
+            if (SyncOrchestrator.DownloadNeedsConfirmation(Config(confirm: false, conclusive)))
+            {
+                return $"it required confirmation with the download setting {conclusive}";
+            }
+        }
+
+        if (!SyncOrchestrator.DownloadNeedsConfirmation(Config()))
+        {
+            return "both settings on did not require confirmation";
+        }
+
+        return SyncOrchestrator.DownloadNeedsConfirmation(Config(true, conclusiveDownloads: false))
+            ? "the download setting off still required confirmation"
+            : null;
+    });
+
     Check("an unscored inconclusive result is refused", () =>
     {
         var d = Decide(Inconclusive(), Moved(400), confirm: false, score: null);
@@ -395,8 +457,15 @@ static SyncDecision Decide(
     VerificationResult verdict,
     OffsetChange change,
     bool confirm = true,
-    double? score = null)
-    => SyncDecisionMaker.Decide(verdict, change, () => score, scoreWanted: false, Config(confirm));
+    double? score = null,
+    bool? require = null)
+    => SyncDecisionMaker.Decide(
+        verdict,
+        change,
+        () => score,
+        scoreWanted: false,
+        Config(confirm),
+        require);
 
 // The acquire target has no source file, so the video hash is the whole fingerprint.
 void AcquireGates()
@@ -529,8 +598,7 @@ void AcquireGates()
         foreach (var result in new[]
                  {
                      AcquireResult.Exhausted,
-                     AcquireResult.CapReached,
-                     AcquireResult.Abstained
+                     AcquireResult.CapReached
                  })
         {
             if (SyncOrchestrator.StageFor(result) != StageOutcome.Failed)
@@ -638,8 +706,13 @@ static SyncRecord SetAside(int paid)
     return (record, target);
 }
 
-static PluginConfiguration Config(bool confirm = true)
-    => new() { DryRunMode = false, RequireAudioConfirmation = confirm };
+static PluginConfiguration Config(bool confirm = true, bool conclusiveDownloads = true)
+    => new()
+    {
+        DryRunMode = false,
+        RequireAudioConfirmation = confirm,
+        RequireConclusiveDownloads = conclusiveDownloads
+    };
 
 void Check(string name, Func<string?> run)
 {

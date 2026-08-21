@@ -78,7 +78,7 @@ Target **Jellyfin 10.11.x on net9.0**. Jellyfin 12 unreleased → ¬bump to its 
 
 - **Never run `git commit`, `git push`, or `gh release create` without the user asking for that action in that moment.** Approving a task ≠ approving publication; approving a *plan that mentions committing* is ¬permission to run it. Staging + reviewing a diff is fine. The user authors every commit.
 - **Never bump `AssemblyVersion`/`FileVersion`, edit `manifest.json` versions, or build a release artifact unless told to.** A release is a deliberate act w/ a checklist in `CLAUDE.md`, ¬the natural end of a piece of work. Finished = builds + passes `verify.ps1` + documented, nothing more.
-- Commit messages: subject line + terse bullets, ¬rationale paragraphs. Release notes = bullets only; requirements/install steps live in `README.md`.
+- Commit messages: subject line + terse bullets, ¬rationale paragraphs. ! **Read `git log` and `git diff` before writing one** — never from memory of the session → *Commit messages* in `CLAUDE.md`. Release notes = bullets only; requirements/install steps live in `README.md`.
 - Files an agent never invents: `manifest.json` version entries (release only), `assy-cli/` payload contents (`build-assy.ps1` only).
 
 ## Tools

@@ -47,17 +47,18 @@ public static class SyncDecisionMaker
     //   reading: an unmeasurable title must clear what a genuine alignment scores.
     public const double MinimumEngineScore = 40;
 
-    // Ceiling on a move nothing verified. Only reachable with audio confirmation turned off.
+    // Ceiling on a move nothing verified. Only reachable where a no-verdict result is not refused.
     public const long MaximumUnverifiedShiftMs = 60_000;
 
-    // ! engineScore is called at most once, and only where a gate or the debug line reads it.
-    //   It parses the produced file.
+    // ! engineScore parses the produced file: called at most once, only where a gate reads it.
+    //   requireConfirmation overrides the setting for one caller; null reads the setting.
     public static SyncDecision Decide(
         VerificationResult verdict,
         OffsetChange change,
         Func<double?> engineScore,
         bool scoreWanted,
-        PluginConfiguration config)
+        PluginConfiguration config,
+        bool? requireConfirmation = null)
     {
         if (verdict.Verdict == SyncVerdict.Misaligned)
         {
@@ -104,8 +105,8 @@ public static class SyncDecisionMaker
             released = true;
         }
 
-        // ! Backstop for a check that confirmed nothing. Not a tight leash: reaching here means
-        //   audio confirmation is off, and a sidecar for another release is legitimately late.
+        // ! Backstop for a check that confirmed nothing. Not a tight leash: reaching here means a
+        //   no-verdict result is not refused, and a sidecar for another release is legitimately late.
         if (verdict.Verdict == SyncVerdict.Inconclusive
             && change.ConstantMs is { } shift
             && Math.Abs(shift) > MaximumUnverifiedShiftMs)
@@ -126,7 +127,7 @@ public static class SyncDecisionMaker
         {
             // ! The check ran and returned no answer, which is not the same as a pass. Where
             //   confirmation is required that ends it, and the score is never read.
-            if (config.RequireAudioConfirmation)
+            if (requireConfirmation ?? config.RequireAudioConfirmation)
             {
                 return new SyncDecision(
                     SyncDecisionKind.NoVerdict,

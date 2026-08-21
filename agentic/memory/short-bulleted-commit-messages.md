@@ -20,7 +20,17 @@ belong in a message — but only when they are in that commit. Run `git status` 
 and write bullets for the files it lists, nothing else. Repeated correction: writing bullets for
 work that is not in the diff has happened more than once.
 
-**How to apply:** subject line under ~60 chars, then one bullet per change, each a single line
-stating what changed. Explanation belongs in `agentic/ARCHITECTURE.md` or the design document, not
-the commit — the same reasoning as the project's no-documentation-in-comments rule. Still hand the
-message over rather than committing it, per [[never-commit-yourself]].
+! **Read `git log` and `git diff` before writing one — never from memory of the session.** The
+maintainer asked for this on 2026-08-21 after a message that neither matched the log's voice
+(wrapping, the audit-findings bullet, the `Co-Authored-By:` trailer) nor was checked against the
+diff. A message written from recall describes the work the agent *meant* to do, and the person
+approving it cannot see either error.
+
+**How to apply:** `git log --format='%H%n%B%n=====' -12` for the voice, `git status --short` for
+what is in the commit, `git diff` for what each file did. Then: subject line under ~70 chars, one
+bullet per change wrapped ~75 w/ a two-space hanging indent. Explanation belongs in
+`agentic/ARCHITECTURE.md` or the design document, not the commit — the same reasoning as the
+project's no-documentation-in-comments rule. ! An `Fix the audit findings <range>` bullet lists
+only the **[F]** ones; a range that swallows an `[A]` or `[O]` claims a fix never made. Still hand
+the message over rather than committing it, per [[never-commit-yourself]]. Full rule →
+`agentic/CLAUDE.md`, *Commit messages*.

@@ -7,11 +7,26 @@ public static class SyncOutcome
 {
     // ! The one refusal RequireAudioConfirmation raises. Every other refusal stands without it.
     public const string NoVerdictRefusal =
+        "Rejected: the audio check reached no verdict on this title.";
+
+    // ! The same refusal reached after buying the whole list. Grouped with the single-candidate
+    //   form, or the card empties the moment an item is offered more than one subtitle.
+    public const string NoVerdictExhausted =
+        "Rejected: the audio check reached no verdict on any subtitle offered for this language.";
+
+    // ! Rows written before the card existed carry the old wording. Reading the current string
+    //   alone moves every one of them onto the card that did not cause them.
+    private const string NoVerdictRefusalLegacy =
         "Rejected: the audio check reached no verdict on this title — rejected as inconclusive.";
 
     // ! Not RejectedOffsetMs: a refusal that reached no verdict carries no offset.
     public static bool IsAudioRefusal(SyncRecord record)
         => record.Status == SyncStatus.Failed && (record.RefusedByAudio ?? InferredRefusal(record));
+
+    // ! A setting caused this one, so it is counted apart from the refusals that stand alone.
+    public static bool IsInconclusiveRefusal(SyncRecord record)
+        => IsAudioRefusal(record)
+           && record.Message is NoVerdictRefusal or NoVerdictExhausted or NoVerdictRefusalLegacy;
 
     // ! Only a measured skip is "already in sync". A source that vanished measured nothing.
     public static bool NothingToDo(SyncRecord record)

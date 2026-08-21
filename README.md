@@ -70,6 +70,7 @@ Every setting is explained on the settings page. In short:
 | Maximum downloads per item | `3` | How many candidates one item may try before giving up on that language. `0` is unlimited, not off. |
 | Download even when the video has an embedded track | Off | On aims the feature at far more of your library — most items without a sidecar do have an embedded track. |
 | Accept hearing-impaired subtitles | Off | On makes them acceptable, never preferred. |
+| Only save downloads when the audio checks are conclusive | On | On keeps downloading candidates until the check reaches a good verdict, up to the download limit. Off stops the item at the first result the check doesn't outright reject. An item that never reaches a verdict is listed under *rejected as inconclusive*. No effect unless *Only sync when the audio checks are conclusive* is on. |
 | Additional download providers | *none* | Both a priority order and the way to tell the plugin an unrecognised provider can download. |
 | Where to write synced external subtitles | Overwrite | Replaces the file in place, always backing it up first. Side-by-side writes a new marked file. |
 | Concurrent syncs | `0` | Automatic: adds workers only while they help, never past half your cores. |

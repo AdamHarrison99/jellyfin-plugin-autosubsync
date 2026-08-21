@@ -117,7 +117,11 @@ var saved = new PluginConfiguration
     ExternalWriteMode = ExternalWriteMode.SideBySide,
     MarkerSuffix = "synced",
     MaxConcurrentSyncs = 2,
-    AutoSyncOnItemAdded = false
+    AutoSyncOnItemAdded = false,
+
+    // ! Off, so the round trip proves the element is written; a default-true bool that is
+    //   never serialized reads as true whatever was saved.
+    RequireConclusiveDownloads = false
 };
 
 var roundTripPath = Path.Combine(AppContext.BaseDirectory, "restart-config.xml");
@@ -146,6 +150,10 @@ using (var reader = new StreamReader(roundTripPath))
     Check("restart ExternalWriteMode", saved.ExternalWriteMode, reloaded.ExternalWriteMode);
     Check("restart MarkerSuffix", saved.MarkerSuffix, reloaded.MarkerSuffix);
     Check("restart AutoSyncOnItemAdded", saved.AutoSyncOnItemAdded, reloaded.AutoSyncOnItemAdded);
+    Check(
+        "restart RequireConclusiveDownloads",
+        saved.RequireConclusiveDownloads,
+        reloaded.RequireConclusiveDownloads);
 }
 
 // A config the admin never saved after upgrading has no element for a property added later.
@@ -166,6 +174,10 @@ using (var reader = new StringReader(partial))
 
     // An upgraded install that never saved keeps the behaviour it already had.
     Check("absent RequireAudioConfirmation", true, loaded.RequireAudioConfirmation);
+
+    // ! A default-true bool added after the fact. Reset to default(bool) it silently starts
+    //   saving downloads the audio check never confirmed.
+    Check("absent RequireConclusiveDownloads", true, loaded.RequireConclusiveDownloads);
     Check("absent RunOcrWhenTextExists", false, loaded.RunOcrWhenTextExists);
     Check("absent ProcessEmbeddedWhenExternalExists", false, loaded.ProcessEmbeddedWhenExternalExists);
 }

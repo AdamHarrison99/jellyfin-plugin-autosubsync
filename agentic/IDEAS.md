@@ -107,9 +107,9 @@ failed on — if it cannot beat them there, nothing downstream matters.
 
 ## `IDEA-ACQUIRE` — download a subtitle, sync it, and keep it only if it verifies
 
-> **Shaped → `agentic/plans/IDEA-ACQUIRE.md`.** That file carries the verified 10.11 API
-> contract, the design, nine settled decisions and six pre-implementation checks — five
-> answered or deferred, `AQ-P6` still open. Read it before adding to this entry.
+> **Implemented → `agentic/plans/IDEA-ACQUIRE-(DONE).md`.** Shipped in 1.6.0.0. That file carries
+> the verified 10.11 API contract, the design, the settled decisions and the pre-implementation
+> checks — `AQ-P6` since answered and closed. Read it before adding to this entry.
 
 For an item with no subtitle in a wanted language, ask Jellyfin's own `ISubtitleManager` for the
 provider's result list and work down it: download one, sync it, and let the audio check decide. A
@@ -131,13 +131,17 @@ own audio, independently of the engine. The idea is therefore ¬"be a downloader
 check the plugin already has as the gate on someone else's downloader**, and that is the only part
 worth building.
 
-What is unshaped:
+What was unshaped, kept for why the built system is shaped the way it is. ! **Every point below is
+resolved in the plan** — incl. *two downloaders race*, which `AQ-P6` disproved outright. ¬read the
+list as open work.
 
 - ! **`Inconclusive` is ¬a rejection, and treating it as one deletes every candidate.** The check
   refuses a sizeable, well-characterised slice of the library at any threshold by either method —
   the whole basis of `IDEA-VAD`. On those titles the loop either accepts blind or exhausts the list
   and leaves the item worse off *and* poorer. A three-way verdict needs a third behaviour, and
   "keep the first one" is the honest candidate ∵ it matches what the user gets today.
+  ! **Built** — `RequireConclusiveDownloads`, off. The third behaviour is the setting, and the
+  engine-score floor is what still stands under it. → `ARCHITECTURE.md`, *the abstention*.
 - ! **A successful sync is ¬evidence of a correct match.** Z1: `ffsubsync` picks its rate from a
   fixed list of standard ratios, so every output lands on one — including output from a different
   show's subtitle. The engine's own score is worse still (Z3, refused twice). Only the check's

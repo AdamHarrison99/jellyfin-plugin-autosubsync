@@ -9,5 +9,8 @@
 - [Report status as a Done / Not done table](report-status-as-done-not-done-table.md) — never prose; outstanding and blocked items always listed
 - [Read the docs before concluding](read-the-docs-before-concluding.md) — a documented decision the code now contradicts is the finding
 - [Ask before changing the UI](ask-before-changing-the-ui.md) — approving a finding is not approving a config-page change as its fix
+- [Never reword what the maintainer wrote](never-reword-what-the-maintainer-wrote.md) — their prose is theirs; propose and stop, never silently edit or delete it
+- [The maintainer's wording is the spec](the-maintainers-wording-is-the-spec.md) — a description that disagrees with the build is a feature request, not a typo
+- [Edit files directly, not via scripts](edit-files-directly-not-via-scripts.md) — no throwaway patch scripts; the diff must be visible
 - [Ask questions as simple options](ask-questions-as-simple-options.md) — plain language, options picker, recommended one first; never prose at the end of a report
 - [Verify a change on a wide population](verify-a-change-on-a-wide-population.md) — before and after, far more titles than the plan names; the fixed five are the control, not the population

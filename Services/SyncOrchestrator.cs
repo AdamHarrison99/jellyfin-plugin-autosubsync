@@ -604,10 +604,6 @@ public class SyncOrchestrator
                 SafeUpsert(record, SubtitleStageKind.Verify);
                 break;
 
-            // The judge already stamped the refusal the shared gates produced.
-            case AcquireResult.Abstained:
-                break;
-
             case AcquireResult.Exhausted:
             case AcquireResult.CapReached:
                 Fail(
@@ -661,10 +657,14 @@ public class SyncOrchestrator
         => result switch
         {
             AcquireResult.Kept => StageOutcome.Succeeded,
-            AcquireResult.Exhausted or AcquireResult.CapReached or AcquireResult.Abstained
-                => StageOutcome.Failed,
+            AcquireResult.Exhausted or AcquireResult.CapReached => StageOutcome.Failed,
             _ => StageOutcome.Skipped
         };
+
+    // ! Rides on top of the sync gate and never loosens it. Off, a no-verdict download falls
+    //   through to the engine gates below the verdict.
+    internal static bool DownloadNeedsConfirmation(PluginConfiguration config)
+        => config.RequireAudioConfirmation && config.RequireConclusiveDownloads;
 
     // One fetched candidate, from the audio check to placement.
     private async Task<CandidateVerdict> JudgeCandidateAsync(
@@ -742,7 +742,8 @@ public class SyncOrchestrator
             change,
             () => EngineConfidence(attempt),
             _logger.IsEnabled(LogLevel.Debug),
-            config);
+            config,
+            DownloadNeedsConfirmation(config));
 
         if (!decision.Accepted)
         {
@@ -750,8 +751,8 @@ public class SyncOrchestrator
             LogRefusal(target, verdict, decision);
             Fail(record, decision.Message, decision.RejectedOffsetMs, SubtitleStageKind.Verify);
 
-            // ! The verdict decides, not the branch. An abstention describes the audio of this
-            //   video, so the next candidate would only buy a second one.
+            // ! The verdict decides, not the branch. The acquirer counts abstentions apart from
+            //   refusals so the exhausted message can name which one emptied the list.
             return verdict.Verdict == SyncVerdict.Inconclusive
                 ? CandidateVerdict.Inconclusive
                 : CandidateVerdict.Misaligned;

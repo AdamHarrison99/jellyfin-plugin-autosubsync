@@ -69,6 +69,10 @@ public class PluginConfiguration : BasePluginConfiguration
     // On, a hearing-impaired candidate is acceptable; it is never preferred.
     public bool AcquireHearingImpaired { get; set; }
 
+    // ! Downloads only, and only reachable while RequireAudioConfirmation is on. Off, a candidate
+    //   the check could not measure is kept if the engine scored its own alignment.
+    public bool RequireConclusiveDownloads { get; set; } = true;
+
     // ! Zero means unlimited, never disabled. The master toggle is what disables the feature.
     public int MaxDownloadsPerItem { get; set; } = DefaultMaxDownloadsPerItem;
 

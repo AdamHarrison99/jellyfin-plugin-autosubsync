@@ -31,6 +31,7 @@
     <Compile Include="..\..\..\Subtitles\SubtitleDiscoveryService.cs" Link="SubtitleDiscoveryService.cs" />
     <Compile Include="..\..\..\Subtitles\SubtitleNaming.cs" Link="SubtitleNaming.cs" />
     <Compile Include="..\..\..\Subtitles\SubtitleSlot.cs" Link="SubtitleSlot.cs" />
+    <Compile Include="..\..\..\Subtitles\SubtitleSourceKey.cs" Link="SubtitleSourceKey.cs" />
     <Compile Include="..\..\..\Subtitles\VobSubIndex.cs" Link="VobSubIndex.cs" />
   </ItemGroup>
 

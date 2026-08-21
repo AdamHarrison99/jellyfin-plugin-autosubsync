@@ -25,7 +25,6 @@ public enum AcquireResult
     AllFiltered = 3,
     Exhausted = 4,
     CapReached = 5,
-    Abstained = 6,
     ProvidersRetired = 7
 }
 
@@ -66,6 +65,10 @@ public class SubtitleAcquirer
         public int Fetches { get; set; }
 
         public int Refusals { get; set; }
+
+        public int Abstentions { get; set; }
+
+        public int Walled { get; set; }
 
         public int Failures { get; set; }
 
@@ -136,13 +139,28 @@ public class SubtitleAcquirer
                         tally.Failures == 0);
                 }
 
+                // ! Costs nothing and is checked per offer. A wall on one internal source of an
+                //   aggregator leaves the rest of its list worth buying.
+                if (_retirement.ReasonFor(provider, SubtitleSourceKey.For(offer.Info)) is not null)
+                {
+                    tally.Walled++;
+                    continue;
+                }
+
                 var fetched = await FetchAsync(offer.Info, provider, allocateScratch, cancellationToken)
                     .ConfigureAwait(false);
 
                 // ! A provider that hit a wall is charged nothing. No download was made.
                 if (fetched.Retired)
                 {
-                    break;
+                    // ! Only a wall the whole provider is behind ends its list. One source's wall
+                    //   is skipped by the check above on the offers that follow it.
+                    if (_retirement.ReasonFor(provider) is not null)
+                    {
+                        break;
+                    }
+
+                    continue;
                 }
 
                 tally.Fetches++;
@@ -191,15 +209,16 @@ public class SubtitleAcquirer
                     return new AcquireOutcome(AcquireResult.Kept, null, tally.Fetches, Confidence(offer), false);
                 }
 
-                // ! No fall-through. An abstention is a property of this video, not of the file.
-                if (verdict == CandidateVerdict.Inconclusive)
-                {
-                    return new AcquireOutcome(AcquireResult.Abstained, null, tally.Fetches, null, true);
-                }
-
-                if (verdict == CandidateVerdict.Misaligned)
+                // ! The ledger keeps the verdict the check actually reached, whatever the setting
+                //   does with it.
+                if (verdict is CandidateVerdict.Misaligned or CandidateVerdict.Inconclusive)
                 {
                     tally.Refusals++;
+
+                    if (verdict == CandidateVerdict.Inconclusive)
+                    {
+                        tally.Abstentions++;
+                    }
                 }
                 else
                 {
@@ -210,9 +229,15 @@ public class SubtitleAcquirer
 
         if (tally.Refusals > 0 || tally.Failures > 0)
         {
+            // ! Nothing was measured, so nothing was refused. Naming this a refusal puts it on
+            //   the card that reports what the check decided.
+            var abstained = tally.Failures == 0 && tally.Abstentions == tally.Refusals;
+
             return new AcquireOutcome(
                 AcquireResult.Exhausted,
-                "Failed: every subtitle offered for this language was refused by the audio check.",
+                abstained
+                    ? SyncOutcome.NoVerdictExhausted
+                    : "Failed: every subtitle offered for this language was refused by the audio check.",
                 tally.Fetches,
                 null,
                 tally.Failures == 0);
@@ -231,6 +256,19 @@ public class SubtitleAcquirer
             return new AcquireOutcome(
                 AcquireResult.NothingOffered,
                 "Set aside: no subtitle provider could be searched for this language.",
+                tally.Fetches,
+                null,
+                false);
+        }
+
+        // ! Last, so anything the plugin actually learned about a file outranks it. These were
+        //   usable; naming them unusable blames the subtitles for a spent allowance.
+        if (tally.Walled > 0)
+        {
+            return new AcquireOutcome(
+                AcquireResult.ProvidersRetired,
+                "Set aside: every subtitle offered for this language came from a provider that has "
+                + "stopped answering this scan.",
                 tally.Fetches,
                 null,
                 false);
@@ -273,8 +311,9 @@ public class SubtitleAcquirer
         }
         catch (Exception ex)
         {
-            // ! A search failure is this provider offering nothing, never an item failure.
-            if (!Retire(provider, ex) && _retirement.NoteFailure(provider))
+            // ! A search failure is this provider offering nothing, never an item failure. No
+            //   candidate is in flight, so there is nothing to charge a wall to but the provider.
+            if (!Retire(provider, null, ex) && _retirement.NoteFailure(provider))
             {
                 _logger.LogWarning(ex, "{Provider} could not be searched and answered nothing", provider);
             }
@@ -327,7 +366,7 @@ public class SubtitleAcquirer
         }
         catch (Exception ex)
         {
-            var retired = Retire(provider, ex);
+            var retired = Retire(provider, SubtitleSourceKey.For(candidate), ex);
 
             if (!retired)
             {
@@ -338,19 +377,32 @@ public class SubtitleAcquirer
         }
     }
 
-    private bool Retire(string provider, Exception error)
+    // ! A null source retires the whole provider. Naming one narrows the wall to that source, so
+    //   it is passed only where a candidate in flight says which source the fetch went to.
+    private bool Retire(string provider, string? source, Exception error)
     {
         if (ProviderRetirement.RetirementReason(error) is not { } reason)
         {
             return false;
         }
 
-        if (_retirement.ReasonFor(provider) is null)
+        if (_retirement.ReasonFor(provider, source) is null)
         {
-            _logger.LogWarning("{Provider} {Reason}; it will not be asked again this scan", provider, reason);
+            _logger.LogWarning(
+                "{Provider} {Reason}; it will not be asked again this scan",
+                source is null ? provider : provider + "/" + source,
+                reason);
         }
 
-        _retirement.Retire(provider, reason);
+        if (source is null)
+        {
+            _retirement.Retire(provider, reason);
+        }
+        else
+        {
+            _retirement.RetireSource(provider, source, reason);
+        }
+
         return true;
     }
 

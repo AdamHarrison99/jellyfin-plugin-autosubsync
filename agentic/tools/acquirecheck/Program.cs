@@ -6,7 +6,12 @@
 // Mutation: make DownloadProviders.Matches a substring test -> the impostor case passes.
 // Mutation: drop "Open Subtitles" to "OpenSubtitles"  -> a real server reports no downloader.
 // Mutation: count a filtered candidate against the cap -> bad metadata bounds the wrong thing.
-// Mutation: let Inconclusive fall through to the next provider -> a second abstention is bought.
+// Mutation: stop the loop on Inconclusive   -> the shared gates never judge the download at all.
+// Mutation: break on any wall, not the provider's -> one spent account ends the aggregator's list.
+// Mutation: drop the id cross-check      -> a label walls a source that never answered.
+// Mutation: drop the host shape from a token -> a plain provider invents one and is under-retired.
+// Mutation: drop the walled outcome      -> a spent allowance reads as unusable subtitles.
+// Mutation: always use the refused wording -> the inconclusive card empties under the default.
 // Mutation: compare the gap test on the slot key -> forced and SDH tracks stop filling a language.
 // Mutation: drop the SearchFailures message  -> a provider that threw reports an empty answer.
 // Mutation: walk InnerException alone        -> a wall inside an aggregate is asked again per item.
@@ -617,26 +622,120 @@ void FallThrough()
         return source.Searched.Count == 2 ? null : $"searched {source.Searched.Count} providers";
     });
 
-    // ! An abstention describes the audio of this video, so a second file buys a second one.
-    Check("an abstention stops the item without searching the next provider", () =>
+    // ! The setting belongs to the shared gates. A second copy of it here would stop the item
+    //   ahead of them, which is the whole of what the loop must not do.
+    Check("the loop reads no setting of its own about an abstention", () =>
+    {
+        foreach (var on in new[] { true, false })
+        {
+            var source = new StubSource(["Open Subtitles", "subbuzz"]);
+            source.Results["Open Subtitles"] = [Offer("a1"), Offer("a2")];
+            source.Results["subbuzz"] = [Offer("b1")];
+
+            var run = RunWith(Conclusive(on), source, _ => CandidateVerdict.Inconclusive);
+
+            if (run.Outcome.Result != AcquireResult.Exhausted)
+            {
+                return $"ended {run.Outcome.Result} with the setting {on}";
+            }
+
+            if (run.Outcome.Fetches != 3)
+            {
+                return $"made {run.Outcome.Fetches} downloads with the setting {on}";
+            }
+
+            if (source.Searched.Count != 2)
+            {
+                return $"searched {source.Searched.Count} providers with the setting {on}";
+            }
+        }
+
+        return null;
+    });
+
+    // ! The default. It buys the list out rather than trusting one non-answer about the title.
+    Check("an abstention buys the next candidate where the setting is on", () =>
     {
         var source = new StubSource(["Open Subtitles", "subbuzz"]);
         source.Results["Open Subtitles"] = [Offer("a1"), Offer("a2")];
         source.Results["subbuzz"] = [Offer("b1")];
 
-        var run = RunWith(Config(), source, _ => CandidateVerdict.Inconclusive);
+        var run = RunWith(Conclusive(true), source, _ => CandidateVerdict.Inconclusive);
 
-        if (run.Outcome.Result != AcquireResult.Abstained)
+        if (run.Outcome.Result != AcquireResult.Exhausted)
         {
             return $"ended {run.Outcome.Result}";
         }
 
-        if (run.Outcome.Fetches != 1)
+        if (run.Outcome.Fetches != 3)
         {
             return $"made {run.Outcome.Fetches} downloads";
         }
 
-        return source.Searched.Count == 1 ? null : $"searched {source.Searched.Count} providers";
+        return source.Searched.Count == 2 ? null : $"searched {source.Searched.Count} providers";
+    });
+
+    // ! The verdict the check reached, not what the setting did with it.
+    Check("the ledger still records an abstention as inconclusive", () =>
+    {
+        var run = Run(Conclusive(true), [Offer("a")], _ => CandidateVerdict.Inconclusive);
+        var ledger = run.Record.AcquireAttempts;
+
+        if (ledger.Count != 1)
+        {
+            return $"ledgered {ledger.Count} attempts";
+        }
+
+        return ledger[0].Outcome == AcquireAttemptOutcome.Inconclusive
+            ? null
+            : $"ledgered it as {ledger[0].Outcome}";
+    });
+
+    // ! The budget still bounds it. Patience must not become an unbounded spend.
+    Check("the per-item limit still stops a patient item", () =>
+    {
+        var config = Conclusive(true);
+        config.MaxDownloadsPerItem = 2;
+
+        var run = Run(
+            config,
+            [Offer("a"), Offer("b"), Offer("c")],
+            _ => CandidateVerdict.Inconclusive);
+
+        return run.Outcome.Fetches == 2 ? null : $"made {run.Outcome.Fetches} downloads";
+    });
+
+    // ! The default path, so this is the wording the card is mostly made of.
+    Check("a list bought out on abstentions is named as inconclusive", () =>
+    {
+        var run = Run(Conclusive(true), [Offer("a"), Offer("b")], _ => CandidateVerdict.Inconclusive);
+
+        if (run.Outcome.Message != SyncOutcome.NoVerdictExhausted)
+        {
+            return $"said \"{run.Outcome.Message}\"";
+        }
+
+        return SyncOutcome.IsInconclusiveRefusal(Panel(run.Outcome))
+            ? null
+            : "the panel reads it as an ordinary refusal";
+    });
+
+    // ! One measured refusal is a refusal. Only a list of pure non-answers is the other card.
+    Check("one misalignment among abstentions is an ordinary refusal", () =>
+    {
+        var run = Run(
+            Conclusive(true),
+            [Offer("a"), Offer("b")],
+            id => id == "b" ? CandidateVerdict.Misaligned : CandidateVerdict.Inconclusive);
+
+        if (run.Outcome.Message == SyncOutcome.NoVerdictExhausted)
+        {
+            return "named as inconclusive";
+        }
+
+        return SyncOutcome.IsInconclusiveRefusal(Panel(run.Outcome))
+            ? "the panel reads it as inconclusive"
+            : null;
     });
 
     Check("nothing offered anywhere is set aside, not failed", () =>
@@ -850,6 +949,215 @@ void Retirement()
             : "a retirement outlived its sweep";
     });
 
+    Console.WriteLine();
+    Console.WriteLine("What happens when one source inside an aggregator stops answering?");
+
+    // ! The case this exists for. One exhausted account inside subbuzz must not take the rest of
+    //   subbuzz with it, and until this was built it did.
+    Check("a wall on one source leaves its siblings answering", () =>
+    {
+        var source = new StubSource(["subbuzz"]);
+        source.Results["subbuzz"] = [Aggregated("opensubtitles.com", "1"), Aggregated("subsource.net", "1")];
+        source.FetchThrows[Aggregated("opensubtitles.com", "1").Id] = new RateLimitExceededException();
+
+        var retirement = new ProviderRetirement();
+        var run = RunWith(Config(), source, _ => CandidateVerdict.Kept, retirement);
+
+        if (run.Outcome.Result != AcquireResult.Kept)
+        {
+            return $"ended {run.Outcome.Result}";
+        }
+
+        if (retirement.ReasonFor("subbuzz") is not null)
+        {
+            return "one source took the whole provider with it";
+        }
+
+        return retirement.ReasonFor("subbuzz", "opensubtitles.com") is not null
+            ? null
+            : "the walled source was left live";
+    });
+
+    // ! The offers behind a walled source are skipped before the fetch, so they cost nothing.
+    Check("a walled source is not bought again further down the same list", () =>
+    {
+        var source = new StubSource(["subbuzz"]);
+        source.Results["subbuzz"] =
+        [
+            Aggregated("opensubtitles.com", "1"),
+            Aggregated("opensubtitles.com", "2"),
+            Aggregated("subsource.net", "1")
+        ];
+
+        source.FetchThrows[Aggregated("opensubtitles.com", "1").Id] = new RateLimitExceededException();
+
+        var run = RunWith(
+            Config(),
+            source,
+            id => id.Contains("subsource.net", StringComparison.Ordinal)
+                ? CandidateVerdict.Kept
+                : CandidateVerdict.Misaligned);
+
+        if (run.Outcome.Result != AcquireResult.Kept)
+        {
+            return $"ended {run.Outcome.Result}";
+        }
+
+        return run.Outcome.Fetches == 1 ? null : $"charged {run.Outcome.Fetches} downloads";
+    });
+
+    // ! Nothing is in flight during a search, so there is no source to charge the wall to.
+    Check("a wall reached while searching still retires the whole provider", () =>
+    {
+        var source = new StubSource(["subbuzz", "Open Subtitles"]);
+        source.SearchThrows["subbuzz"] = new RateLimitExceededException();
+        source.Results["Open Subtitles"] = [Offer("a1")];
+
+        var retirement = new ProviderRetirement();
+        RunWith(Config(), source, _ => CandidateVerdict.Kept, retirement);
+
+        return retirement.ReasonFor("subbuzz") is not null
+            ? null
+            : "a provider that walled the search was left live";
+    });
+
+    // ! A source retirement must never leak onto a provider that happens to share the name.
+    Check("a retired source does not retire the provider that shares its name", () =>
+    {
+        var retirement = new ProviderRetirement();
+        retirement.RetireSource("subbuzz", "opensubtitles.com", "has spent its download allowance");
+
+        if (retirement.ReasonFor("subbuzz") is not null)
+        {
+            return "the provider was retired by one of its sources";
+        }
+
+        if (retirement.ReasonFor("subbuzz", "subsource.net") is not null)
+        {
+            return "a sibling source was retired";
+        }
+
+        return retirement.Live(["subbuzz"]).Count == 1 ? null : "the provider stopped being asked";
+    });
+
+    // ! A walled provider carries its sources, or a per-source check would ask one of them again.
+    Check("a walled provider answers for every source under it", () =>
+    {
+        var retirement = new ProviderRetirement();
+        retirement.Retire("subbuzz", "has spent its download allowance");
+
+        return retirement.ReasonFor("subbuzz", "subsource.net") is not null
+            ? null
+            : "a source under a walled provider read as live";
+    });
+
+    Check("the next sweep asks a retired source again", () =>
+    {
+        var retirement = new ProviderRetirement();
+        retirement.RetireSource("subbuzz", "opensubtitles.com", "has spent its download allowance");
+        retirement.Reset();
+
+        return retirement.ReasonFor("subbuzz", "opensubtitles.com") is null
+            ? null
+            : "a source retirement outlived its sweep";
+    });
+
+    Console.WriteLine();
+    Console.WriteLine("Which source produced a result?");
+
+    Check("the source is read off the id the label agrees with", () =>
+        SubtitleSourceKey.For(Aggregated("opensubtitles.com", "1")) == "opensubtitles.com"
+            ? null
+            : "the source went unread");
+
+    // ! The label is free text. Retiring on a token the id never confirms walls the wrong source.
+    Check("a label the id does not confirm names no source", () =>
+    {
+        var invented = Aggregated("opensubtitles.com", "1");
+        invented.Comment = "[subsource.net] release group";
+        invented.ProviderName = "[subbuzz] subsource.net";
+        invented.Name = "subsource.net";
+
+        return SubtitleSourceKey.For(invented) is null ? null : "an unconfirmed label became a key";
+    });
+
+    // ! Aggregators bold the source. A tag left in matches no id and the source is silently lost.
+    Check("markup around the source is stripped", () =>
+    {
+        var marked = Aggregated("opensubtitles.com", "1");
+        marked.Comment = null;
+        marked.ProviderName = "[subbuzz] <b>OpenSubtitles.com</b>";
+        marked.Name = "a release name";
+
+        return SubtitleSourceKey.For(marked) == "opensubtitles.com"
+            ? null
+            : "a bolded source went unread";
+    });
+
+    Check("a result carrying no source at all names none", () =>
+        SubtitleSourceKey.For(Offer("a1")) is null ? null : "a plain result invented a source");
+
+    // ! The costly direction. An invented source narrows a wall that should have stopped the whole
+    //   provider, so a spent account goes on being asked for every offer behind it.
+    Check("an ordinary provider whose label prefixes its own id names no source", () =>
+    {
+        var plain = Offer("12345_abcdef");
+        plain.ProviderName = "abc";
+        plain.Comment = "abc";
+
+        return SubtitleSourceKey.For(plain) is null ? null : "a single-source provider invented one";
+    });
+
+    Check("a label the id confirms but no aggregator would use names no source", () =>
+    {
+        var spaced = Offer("12345_some release group");
+        spaced.Comment = "[subbuzz] some release group";
+
+        return SubtitleSourceKey.For(spaced) is null ? null : "a free-text label became a key";
+    });
+
+    Console.WriteLine();
+    Console.WriteLine("What does an item behind a walled source report?");
+
+    // ! These were buyable. Reporting them unusable blames the subtitles for a spent allowance,
+    //   and the panel is the only view the user has.
+    Check("a list entirely behind a walled source is set aside as unavailable", () =>
+    {
+        var retirement = new ProviderRetirement();
+        retirement.RetireSource("subbuzz", "opensubtitles.com", "has spent its download allowance");
+
+        var source = new StubSource(["subbuzz"]);
+        source.Results["subbuzz"] = [Aggregated("opensubtitles.com", "1"), Aggregated("opensubtitles.com", "2")];
+
+        var run = RunWith(Config(), source, _ => CandidateVerdict.Kept, retirement);
+
+        if (run.Outcome.Result != AcquireResult.ProvidersRetired)
+        {
+            return $"ended {run.Outcome.Result}";
+        }
+
+        if (run.Outcome.Fetches != 0)
+        {
+            return $"charged {run.Outcome.Fetches} downloads";
+        }
+
+        return run.Outcome.RefusedByAudio ? "a wall was reported as an audio refusal" : null;
+    });
+
+    // ! Anything the check actually decided outranks the wall; that is the more useful reason.
+    Check("a refusal alongside a walled source still reports the refusal", () =>
+    {
+        var retirement = new ProviderRetirement();
+        retirement.RetireSource("subbuzz", "opensubtitles.com", "has spent its download allowance");
+
+        var source = new StubSource(["subbuzz"]);
+        source.Results["subbuzz"] = [Aggregated("opensubtitles.com", "1"), Aggregated("subsource.net", "1")];
+
+        var run = RunWith(Config(), source, _ => CandidateVerdict.Misaligned, retirement);
+
+        return run.Outcome.Result == AcquireResult.Exhausted ? null : $"ended {run.Outcome.Result}";
+    });
+
     Check("the wall is read off the exception type, whatever the provider threw", () =>
     {
         if (ProviderRetirement.RetirementReason(new InvalidOperationException("nothing to see")) is not null)
@@ -955,6 +1263,31 @@ void Ledger()
 }
 
 // ---------------------------------------------------------------- fixtures
+
+// The row the orchestrator would store, so the grouping is read the way the panel reads it.
+static SyncRecord Panel(AcquireOutcome outcome) => new()
+{
+    Status = SyncStatus.Failed,
+    RefusedByAudio = outcome.RefusedByAudio,
+    Message = outcome.Message
+};
+
+// A result from an aggregator: the source is in the id, and in the labels it stamps beside it.
+static RemoteSubtitleInfo Aggregated(string source, string tail)
+{
+    var offer = Offer("0123456789abcdef0123456789abcdef_" + source + "eyJJZCI6" + tail);
+    offer.ProviderName = "[subbuzz] " + source;
+    offer.Comment = "[" + source + "] release group";
+    return offer;
+}
+
+// Whether a download the check could not measure has to be confirmed before it is saved.
+static PluginConfiguration Conclusive(bool on)
+{
+    var config = Config();
+    config.RequireConclusiveDownloads = on;
+    return config;
+}
 
 static PluginConfiguration Config()
 {
